@@ -76,7 +76,25 @@ def _load_raw_df_dynamic(buffer, col_names):
     return pd.read_csv(StringIO(data_str), names=col_names), temp
 
 
-
+# ——— IVE low-level loader ———
+def _load_raw_df_ive(buffer, col_names):
+    raw = buffer.readlines() if hasattr(buffer, "readlines") else open(buffer, 'rb').readlines()
+    lines = [
+        L.decode('utf-8', errors='replace') if isinstance(L, (bytes, bytearray)) else L
+        for L in raw
+    ]
+    search_header = (
+        "GenericA,GenericA,Time,Temp,Temp,Strain,Freq,Strain,Temp,,Torque,"
+        "Torque,Torque,Modulus,Modulus,Modulus,Compl,Compl,Compl,Visc,Visc,Visc,"
+        "GenericB,Shear,Reserve1,Reserve2,Pressure"
+    )
+    idx = next((i for i, L in enumerate(lines) if L.strip() == search_header), None)
+    if idx is None:
+        raise ValueError("IVE header not found in file.")
+    data_str = "".join(lines[idx + 1:])
+    temp = _read_test_temp(lines, "Time,Strain,Torque,Torque,Torque,Modulus,Modulus,Modulus,Compl,"
+                "Compl,Compl,Visc,Visc,Visc,GenericB,Temp,Temp,Temp,Pressure,Force,Reserve1,Reserve2")
+    return pd.read_csv(StringIO(data_str), names=col_names), temp
 
 
 
@@ -135,25 +153,47 @@ def clean_dynamic_file(buffer):
     return df, temp
 
 
+# ——— 4) IVE-test cleaner ———
+@st.cache_data
+def clean_ive_file(buffer):
+    col_names = [
+        "Cond","Stat","Time","UTemp","LTemp","Strain","Freq","SStrain","Temp","dummy",
+        "Sp","Spp","Ss","Gp","Gpp","Gs","Jp","Jpp","Js","Np","Npp","Ns","TDelt",
+        "Shear","Reserve1","Reserve2","Pressure"
+    ]
+    df, temp = _load_raw_df_ive(buffer, col_names)
+
+    # convert and smooth Np & Ns
+    df['Gp'] = pd.to_numeric(df['Gp'], errors='coerce')
+    df['Gpp'] = pd.to_numeric(df['Gpp'], errors='coerce')
+    df['Gp_smooth'] = df['Gp'].rolling(window=3, center=True).mean()
+    df['Gpp_smooth'] = df['Gpp'].rolling(window=3, center=True).mean()
+    # ensure time is numeric
+    df['Freq'] = pd.to_numeric(df['Freq'], errors='coerce')
+    return df, temp
+
+
 
 # ——— UI ———
 st.title("RPA Post-Processing Tool")
 
 mode = st.selectbox(
     "Choose mode:",
-    ["Cure Test", "Scorch Test", "Dynamic Test"]
+    ["Cure Test", "Scorch Test", "Dynamic Test", "IVE Test"],
 )
 
 # per-mode uploader
 key_map = {
-    "Cure Test":      "uploader_cure",
-    "Scorch Test":    "uploader_scorch",
-    "Dynamic Test":"uploader_dynamic"
+    "Cure Test":   "uploader_cure",
+    "Scorch Test": "uploader_scorch",
+    "Dynamic Test": "uploader_dynamic",
+    "IVE Test": "uploader_ive"
 }
 labels = {
-    "Cure Test": "Upload Cure-test .erp files",
-    "Scorch Test": "Upload Scorch-test .erp files",
-    "Dynamic Test": "Upload dynamic-test .erp files"
+    "Cure Test":      "Upload Cure-test .erp files",
+    "Scorch Test":    "Upload Scorch-test .erp files",
+    "Dynamic Test":   "Upload dynamic-test .erp files",
+    "IVE Test": "Upload IVE-test .erp files"
 }
 
 uploaded = st.file_uploader(
@@ -175,8 +215,10 @@ for f in uploaded:
             df, temp = clean_cure_file(f)
         elif mode == "Scorch Test":
             df, temp = clean_scorch_file(f)
-        else:
+        elif mode == "Dynamic Test":
             df, temp = clean_dynamic_file(f)
+        else:
+            df, temp = clean_ive_file(f)
         processed[f.name] = (df, temp)
     except Exception as e:
         st.error(f"⚠️ Failed **{f.name}**: {e}")
@@ -207,10 +249,14 @@ with tab_graph:
         opts    = ["Sp", "Gp", "Alpha"]
         x_axis  = "Time"
         x_label = "Time [min]"
-    else:
+    elif mode == "Dynamic Test":
         opts    = ["TanDelta", "Gp"]
         x_axis  = "Strain"
         x_label = "Strain"
+    elif mode == "IVE Test":
+        opts    = ["Gp & Gpp", "Gp", "Gpp"]
+        x_axis  = "Freq"
+        x_label = "Frequency [Hz]"
 
     # controls layout
     if mode == "Dynamic Test":
@@ -222,8 +268,12 @@ with tab_graph:
         with col3:
             legend_choice = st.radio("Legend label:", ["Filename", "Nickname"], horizontal=True)
     else:
-        metric        = st.radio("Metric", opts, horizontal=True)
-        legend_choice = st.radio("Legend label:", ["Filename", "Nickname"], horizontal=True)
+        col1, col2 = st.columns([1, 1], gap="large")
+        with col1:
+            metric = st.radio("Metric", opts, horizontal=True)
+        with col2:
+            legend_choice = st.radio("Legend label:", ["Filename", "Nickname"], horizontal=True)
+
 
     select_all = st.checkbox("Select All", value=True)
     to_plot    = [
@@ -264,6 +314,23 @@ with tab_graph:
             ax.set_xticks(ticks)
             ax.set_xticklabels([str(t) for t in ticks], fontsize=TICK_FS)
 
+        # log–log & decade ticks for IVE Test
+        if mode == "IVE Test":
+            ax.set_xscale("log")
+            ax.set_yscale("log")
+            ax.set_xlim(0.01, 100)
+            ax.set_ylim(0.001, 1)
+
+            xticks = [0.01, 0.1, 1, 10, 100]
+            yticks = [0.001, 0.01, 0.1, 1]
+            ax.set_xticks(xticks)
+            ax.set_xticklabels([str(t) for t in xticks], fontsize=TICK_FS)
+            ax.set_yticks(yticks)
+            ax.set_yticklabels([str(t) for t in yticks], fontsize=TICK_FS)
+
+            ax.grid(which="major", linestyle="-", linewidth=0.5)
+
+
         # plot each mix
         for name in to_plot:
             df, _ = processed[name]
@@ -272,37 +339,54 @@ with tab_graph:
             if mode == "Dynamic Test" and phase != "Both":
                 peak = df[x_axis].idxmax()
                 df = df.iloc[:peak+1] if phase == "Go" else df.iloc[peak:]
+            
+
 
             # select y
-            if metric in ("Gp", "Sp"):
+            if metric in ("Gp", "Sp", "Gpp"):
                 y = df[f"{metric}_smooth"]
             elif metric == "Alpha":
                 y = df["Sp_smooth"] / df["Sp"].max()
-            else:
+            elif metric == "TanDelta":
                 y = df["TDelt"]
+            elif metric in ("Np", "Ns"):
+                y = df[f"{metric}_smooth"]
 
             lbl = name if legend_choice == "Filename" else nicknames[name]
-            ax.plot(
-                df[x_axis], y,
-                color=color_map[name],
-                linewidth=LINEWIDTH,
-                label=lbl
-            )
+
+            if mode == "IVE Test":
+                if metric == "Gp & Gpp":
+                    ax.plot(df[x_axis], df["Gp_smooth"],  linewidth=LINEWIDTH, color=color_map[name], label=f"{lbl} Gp")
+                    ax.plot(df[x_axis], df["Gpp_smooth"], linewidth=LINEWIDTH, color=color_map[name], linestyle="--", label=f"{lbl} Gpp")
+                else:
+                    ax.plot(df[x_axis], df[f"{metric}_smooth"], linewidth=LINEWIDTH, label=lbl)
+                continue
+
+
+            ax.plot(df[x_axis], y, color=color_map[name], linewidth=LINEWIDTH, label=lbl)
+
+
 
         # titles & labels
         if mode in ("Cure Test", "Scorch Test"):
             title = f"RPA - {mode} {temp_lb}°C/{time_lb}min - {metric} vs {x_axis}"
-        else:
+        elif mode == "Dynamic Test":
             title = f"RPA - Strain Sweep {range_lb} at {temp_lb}°C - {metric} vs {x_axis}"
+        elif mode == "IVE Test":
+            title = f"RPA - IVE Test {temp_lb}°C - {metric} vs Frequency"
+
         ax.set_title(title, fontsize=TITLE_FS)
         ax.set_xlabel(x_label, fontsize=LABEL_FS)
-        ax.set_ylabel(
-            f"Torque ({metric}) [dNm]" if metric in ("Gp","Sp") else metric,
-            fontsize=LABEL_FS
-        )
+        
+        if metric in ("Gp", "Sp", "Gpp"):
+            y_label = f"Torque ({metric}) [dNm]"
+        else:
+            y_label = metric
+            ax.set_ylabel(y_label, fontsize=LABEL_FS)
+
+
         ax.tick_params(axis="both", labelsize=TICK_FS)
 
-        ax.spines["top"].set_visible(False)
 
         # pin bottom & left to data‐origin
         ax.set_xlim(left=0)
@@ -316,15 +400,10 @@ with tab_graph:
         handles, labels = ax.get_legend_handles_labels()
         sorted_pairs    = sorted(zip(labels, handles), key=lambda x: x[0])
         lbls, hnds      = zip(*sorted_pairs)
-        leg = ax.legend(
-            hnds, lbls,
-            title="Mixes",
-            fontsize=LEGEND_FS,
-            title_fontsize=LEGEND_TITLE_FS,
-            loc="lower right",
-            frameon=True,
-            edgecolor="black"
-        )
+        if mode == "IVE Test":
+            leg = ax.legend(hnds, lbls, title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="lower right", frameon=True, edgecolor='black')
+        else:
+            leg = ax.legend(hnds, lbls, title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="lower right", frameon=True, edgecolor='black')
         leg.get_frame().set_linewidth(0.5)
 
         # render and download
@@ -333,12 +412,7 @@ with tab_graph:
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=300)
         buf.seek(0)
-        st.download_button(
-            "Download plot as PNG",
-            data=buf,
-            file_name="rpa_plot.png",
-            mime="image/png"
-        )
+        st.download_button("Download plot as PNG", data=buf, file_name="rpa_plot.png", mime="image/png")
 
 
 
@@ -516,8 +590,11 @@ with tab_data:
             df_display.insert(loc=2, column="Alpha", value=alpha)
             st.dataframe(df_display, use_container_width=True)
 
-        else:  # Dynamic Test
+        elif mode == "Dynamic Test":
             # first 27 columns → rename to sweep_names
             df_display = df.iloc[:, :27].copy()
             st.dataframe(df_display, use_container_width=True)
 
+        elif mode == "IVE Test":
+            df_display = df.iloc[:, :27].copy()
+            st.dataframe(df_display, use_container_width=True)
