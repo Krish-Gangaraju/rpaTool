@@ -7,6 +7,7 @@ from io import StringIO
 import streamlit as st
 import io
 import base64
+import re
 
 
 # ——— Custom CSS for larger tabs & panels ———
@@ -352,6 +353,7 @@ with tab_graph:
             elif metric in ("Np", "Ns"):
                 y = df[f"{metric}_smooth"]
 
+
             lbl = name if legend_choice == "Filename" else nicknames[name]
 
             if mode == "IVE Test":
@@ -380,9 +382,11 @@ with tab_graph:
         
         if metric in ("Gp", "Sp", "Gpp"):
             y_label = f"Torque ({metric}) [dNm]"
+        elif metric == "Gp & Gpp":
+            y_label = "Torque (Gp & Gpp) [dNm]"
         else:
             y_label = metric
-            ax.set_ylabel(y_label, fontsize=LABEL_FS)
+        ax.set_ylabel(y_label, fontsize=LABEL_FS)
 
 
         ax.tick_params(axis="both", labelsize=TICK_FS)
@@ -398,6 +402,9 @@ with tab_graph:
 
         # legend _inside_ plot
         handles, labels = ax.get_legend_handles_labels()
+        if legend_choice == "Filename":
+            labels = [re.sub(r"(?i)\.erp", "", lbl) for lbl in labels]
+
         sorted_pairs    = sorted(zip(labels, handles), key=lambda x: x[0])
         lbls, hnds      = zip(*sorted_pairs)
         if mode == "IVE Test":
