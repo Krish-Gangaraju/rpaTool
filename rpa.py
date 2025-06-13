@@ -33,7 +33,7 @@ def _read_test_temp(lines, search_header):
     try:
         return float(parts[-1])
     except:
-        return None
+        return "0"
 
 
 # ——— Cure low-level loader ———
@@ -95,6 +95,34 @@ def _load_raw_df_ive(buffer, col_names):
     data_str = "".join(lines[idx + 1:])
     temp = _read_test_temp(lines, "Time,Strain,Torque,Torque,Torque,Modulus,Modulus,Modulus,Compl,"
                 "Compl,Compl,Visc,Visc,Visc,GenericB,Temp,Temp,Temp,Pressure,Force,Reserve1,Reserve2")
+    return pd.read_csv(StringIO(data_str), names=col_names), temp
+
+
+# ——— Plastequiv low-level loader ———
+def _load_raw_df_plastequiv(buffer, col_names):
+    raw = buffer.readlines() if hasattr(buffer, "readlines") else open(buffer, 'rb').readlines()
+    lines = [
+        L.decode('utf-8', errors='replace') if isinstance(L, (bytes, bytearray)) else L
+        for L in raw
+    ]
+    search_header = (
+        "Time,Strain,Torque,Torque,Torque,Modulus,Modulus,Modulus,Compl,Compl,Compl,"
+        "Visc,Visc,Visc,GenericB,Temp,Temp,Temp,Pressure,Force,Reserve1,Reserve2"
+    )
+    idx = next((i for i,L in enumerate(lines) if L.strip() == search_header), None)
+    if idx is None:
+        raise ValueError("Header not found in file.")
+    # extract data lines starting 1 row after header
+    data_lines = lines[idx+1:]
+    # find first all‐blank row
+    end = next(
+        (i for i, line in enumerate(data_lines)
+         if all(not p.strip() for p in line.split(','))),
+        len(data_lines)
+    )
+    data_str = "".join(data_lines[:end])
+
+    temp = _read_test_temp(lines, search_header)
     return pd.read_csv(StringIO(data_str), names=col_names), temp
 
 
@@ -174,13 +202,28 @@ def clean_ive_file(buffer):
     return df, temp
 
 
+# ——— 5) Plastequiv-test cleaner ———
+@st.cache_data
+def clean_plastequiv_file(buffer):
+    # identical format to Cure
+    col_names = [
+        "Time","Strain","Sp","Spp","Ss","Gp","Gpp","Gs",
+        "Jp","Jpp","Js","Np","Npp","Ns","TDelt",
+        "UTemp","LTemp","Temp","Pressure","Force","Reserve1","Reserve2"
+    ]
+    df, temp = _load_raw_df_plastequiv(buffer, col_names)
+    df['Sp'] = pd.to_numeric(df['Sp'],  errors='coerce')
+    df['Sp_smooth'] = df['Sp'].rolling(window=5, center=True).mean()
+    df['Time'] = pd.to_numeric(df['Time'], errors='coerce')
+    return df, temp
+
 
 # ——— UI ———
 st.title("RPA Post-Processing Tool")
 
 mode = st.selectbox(
     "Choose mode:",
-    ["Cure Test", "Scorch Test", "Dynamic Test", "IVE Test"],
+    ["Cure Test", "Scorch Test", "Dynamic Test", "Plastequiv Test", "IVE Test"],
 )
 
 # per-mode uploader
@@ -188,12 +231,14 @@ key_map = {
     "Cure Test":   "uploader_cure",
     "Scorch Test": "uploader_scorch",
     "Dynamic Test": "uploader_dynamic",
+    "Plastequiv Test":  "uploader_plastequiv",
     "IVE Test": "uploader_ive"
 }
 labels = {
     "Cure Test":      "Upload Cure-test .erp files",
     "Scorch Test":    "Upload Scorch-test .erp files",
     "Dynamic Test":   "Upload dynamic-test .erp files",
+    "Plastequiv Test":     "Upload Plastequiv-test .erp files",
     "IVE Test": "Upload IVE-test .erp files"
 }
 
@@ -218,8 +263,10 @@ for f in uploaded:
             df, temp = clean_scorch_file(f)
         elif mode == "Dynamic Test":
             df, temp = clean_dynamic_file(f)
-        else:
+        elif mode == "IVE Test":
             df, temp = clean_ive_file(f)
+        elif mode == "Plastequiv Test":
+            df, temp = clean_plastequiv_file(f)
         processed[f.name] = (df, temp)
     except Exception as e:
         st.error(f"⚠️ Failed **{f.name}**: {e}")
@@ -242,6 +289,7 @@ LEGEND_FS       = 4.5
 LEGEND_TITLE_FS = 5.5
 LINEWIDTH       = 1.5
 
+# — Graph Interface —
 with tab_graph:
     st.subheader(f"{mode} — pick curves to plot")
 
@@ -254,6 +302,10 @@ with tab_graph:
         opts    = ["TanDelta", "Gp"]
         x_axis  = "Strain"
         x_label = "Strain"
+    elif mode == "Plastequiv Test":
+        opts    = ["Sp"]
+        x_axis  = "Time"
+        x_label = "Time [min]"
     elif mode == "IVE Test":
         opts    = ["Gp & Gpp", "Gp", "Gpp"]
         x_axis  = "Freq"
@@ -277,10 +329,11 @@ with tab_graph:
 
 
     select_all = st.checkbox("Select All", value=True)
-    to_plot    = [
-        name for name in sorted(processed)
-        if st.checkbox(name, value=select_all, key=f"cb_{mode}_{name}")
-    ]
+    to_plot = []
+    for name in sorted(processed):
+        display_name = re.sub(r"(?i)\.erp", "", name)
+        if st.checkbox(display_name, value=select_all, key=f"cb_{mode}_{name}"):
+            to_plot.append(name)
 
     if not to_plot:
         st.info("Select at least one file to plot.")
@@ -376,6 +429,8 @@ with tab_graph:
             title = f"RPA - Strain Sweep {range_lb} at {temp_lb}°C - {metric} vs {x_axis}"
         elif mode == "IVE Test":
             title = f"RPA - IVE Test {temp_lb}°C - {metric} vs Frequency"
+        elif mode == "Plastequiv Test":
+            title = f"RPA - Plastequiv Test {temp_lb}°C - {metric} vs {x_axis}"
 
         ax.set_title(title, fontsize=TITLE_FS)
         ax.set_xlabel(x_label, fontsize=LABEL_FS)
@@ -420,9 +475,6 @@ with tab_graph:
         fig.savefig(buf, format="png", dpi=300)
         buf.seek(0)
         st.download_button("Download plot as PNG", data=buf, file_name="rpa_plot.png", mime="image/png")
-
-
-
 
 
 
@@ -537,6 +589,8 @@ with tab_key:
         summary_df = summary_df.sort_index(axis=0)
         st.dataframe(summary_df, use_container_width=True)
 
+
+
     elif mode == "Dynamic Test":
         phase = st.radio("Phase", ["Both", "Go", "Return"], horizontal=True, key="dyn_test")
 
@@ -567,6 +621,59 @@ with tab_key:
 
         st.dataframe(summary_df, use_container_width=True)
 
+
+
+    elif mode == "Plastequiv Test":
+
+        summary = []
+        for name in sorted(processed):
+            df, temp = processed[name]
+            # grab last non‐NaN Np value
+            last_np = pd.to_numeric(df["Np"], errors="coerce").dropna().iloc[-1]
+            summary.append({
+                "Mix": name,
+                "Viscosity - Np (kPA)": last_np / 1000
+            })
+        summary_df = pd.DataFrame(summary).set_index("Mix")
+        st.dataframe(summary_df, use_container_width=True)
+
+
+    elif mode == "IVE Test":
+        summary = []
+        for name in sorted(processed):
+            df, temp = processed[name]
+            # drop rows missing the needed columns and sort by frequency
+            df_clean = (
+                df.dropna(subset=["Freq", "Gp_smooth", "Gpp_smooth"])
+                  .sort_values("Freq")
+            )
+
+            # 1) IVE: ratio Gp/Gpp at the lowest reported freq
+            f_min   = df_clean["Freq"].iloc[0]
+            gp_min  = df_clean["Gp_smooth"].iloc[0]
+            gpp_min = df_clean["Gpp_smooth"].iloc[0]
+            ive_val = gp_min / gpp_min if gpp_min else float("nan")
+
+            # 2) crossover freq where Gp = Gpp
+            diffs = df_clean["Gp_smooth"] - df_clean["Gpp_smooth"]
+            # find the first index where the sign flips
+            idx = np.where(diffs.values[:-1] * diffs.values[1:] <= 0)[0]
+            if idx.size:
+                i = idx[0]
+                x0, x1 = df_clean["Freq"].iloc[i],   df_clean["Freq"].iloc[i+1]
+                y0, y1 = diffs.iloc[i],             diffs.iloc[i+1]
+                f_cross = x0 - y0 * (x1 - x0) / (y1 - y0)
+            else:
+                f_cross = float("nan")
+
+            summary.append({
+                "Mix": name,
+                "IVE": ive_val,
+                "Crossover Frequency (Hz)": f_cross
+            })
+
+        summary_df = pd.DataFrame(summary).set_index("Mix")
+        st.dataframe(summary_df, use_container_width=True)
 
     else:
         st.info("Key values for this mode coming soon.")
@@ -600,6 +707,10 @@ with tab_data:
         elif mode == "Dynamic Test":
             # first 27 columns → rename to sweep_names
             df_display = df.iloc[:, :27].copy()
+            st.dataframe(df_display, use_container_width=True)
+
+        elif mode == "Plastequiv Test":
+            df_display = df.iloc[:, :22].copy()
             st.dataframe(df_display, use_container_width=True)
 
         elif mode == "IVE Test":
