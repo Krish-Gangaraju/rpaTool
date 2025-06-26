@@ -58,11 +58,8 @@ def _load_raw_df_cure(buffer, col_names):
 
 # ——— Dynamic low-level loader ———
 def _load_raw_df_dynamic(buffer, col_names):
-    raw = buffer.readlines() if hasattr(buffer, "readlines") else open(buffer, 'rb').readlines()
-    lines = [
-        L.decode('utf-8', errors='replace') if isinstance(L, (bytes, bytearray)) else L
-        for L in raw
-    ]
+    raw = buffer.readlines() if hasattr(buffer, "readlines") else open(buffer, "rb").readlines()
+    lines = [L.decode("utf-8", errors="replace") if isinstance(L, (bytes,bytearray)) else L for L in raw]
     search_header = (
         "GenericA,GenericA,Time,Temp,Temp,Strain,Freq,Strain,Temp,,Torque,Torque,Torque,"
         "Modulus,Modulus,Modulus,Compl,Compl,Compl,Visc,Visc,Visc,"
@@ -71,17 +68,31 @@ def _load_raw_df_dynamic(buffer, col_names):
     idx = next((i for i,L in enumerate(lines) if L.strip() == search_header), None)
     if idx is None:
         raise ValueError("Dynamic header not found in file.")
-    data_str = "".join(lines[idx+1:])
+
+    # ---- new block starts here ----
+    data_lines = lines[idx+1:]
+    clean_lines = []
+    for line in data_lines:
+        first_tok = line.strip().split(',',1)[0]
+        try:
+            float(first_tok)
+        except:
+            break
+        clean_lines.append(line)
+    data_str = "".join(clean_lines)
+    # ---- new block ends here ----
 
     temp = _read_test_temp(lines, search_header)
     return pd.read_csv(StringIO(data_str), names=col_names), temp
 
 
+
+
 # ——— IVE low-level loader ———
 def _load_raw_df_ive(buffer, col_names):
-    raw = buffer.readlines() if hasattr(buffer, "readlines") else open(buffer, 'rb').readlines()
+    raw = buffer.readlines() if hasattr(buffer, "readlines") else open(buffer, "rb").readlines()
     lines = [
-        L.decode('utf-8', errors='replace') if isinstance(L, (bytes, bytearray)) else L
+        L.decode("utf-8", errors="replace") if isinstance(L, (bytes, bytearray)) else L
         for L in raw
     ]
     search_header = (
@@ -92,10 +103,24 @@ def _load_raw_df_ive(buffer, col_names):
     idx = next((i for i, L in enumerate(lines) if L.strip() == search_header), None)
     if idx is None:
         raise ValueError("IVE header not found in file.")
-    data_str = "".join(lines[idx + 1:])
-    temp = _read_test_temp(lines, "Time,Strain,Torque,Torque,Torque,Modulus,Modulus,Modulus,Compl,"
-                "Compl,Compl,Visc,Visc,Visc,GenericB,Temp,Temp,Temp,Pressure,Force,Reserve1,Reserve2")
+
+    # ---- new block starts here ----
+    data_lines = lines[idx+1:]
+    clean_lines = []
+    for line in data_lines:
+        first_tok = line.strip().split(",", 1)[0]
+        try:
+            float(first_tok)
+        except:
+            break
+        clean_lines.append(line)
+    data_str = "".join(clean_lines)
+    # ---- new block ends here ----
+
+    temp = _read_test_temp(lines, search_header)
     return pd.read_csv(StringIO(data_str), names=col_names), temp
+
+
 
 
 # ——— Plastequiv low-level loader ———
@@ -174,12 +199,28 @@ def clean_dynamic_file(buffer):
         "Np","Npp","Ns","TDelt","Shear","Reserve1","Reserve2","Pressure"
     ]
     df, temp = _load_raw_df_dynamic(buffer, col_names)
-    df['Strain']      = pd.to_numeric(df['Strain'], errors='coerce')
-    df['Gp']          = pd.to_numeric(df['Gp'],     errors='coerce')
-    df['TanDelta']    = pd.to_numeric(df['TDelt'],    errors='coerce') / df['Gp']
+
+    # convert key columns to numeric
+    df['Strain']   = pd.to_numeric(df['Strain'],   errors='coerce')
+    df['Gp']       = pd.to_numeric(df['Gp'],       errors='coerce')
+    df['Gpp']      = pd.to_numeric(df['Gpp'],      errors='coerce')
+    df['Np']       = pd.to_numeric(df['Np'],       errors='coerce')
+    df['Npp']      = pd.to_numeric(df['Npp'],      errors='coerce')
+    df['TanDelta'] = pd.to_numeric(df['TDelt'],    errors='coerce')
+
+    # calculate composite N*
+    df['N*']   = np.sqrt(df['Np']**2 + df['Npp']**2)
+
+    # apply 3-point centered rolling smoothing
     df['Gp_smooth']       = df['Gp'].rolling(window=3, center=True).mean()
+    df['Gpp_smooth']      = df['Gpp'].rolling(window=3, center=True).mean()
+    df['Np_smooth']       = df['Np'].rolling(window=3, center=True).mean()
+    df['Npp_smooth']      = df['Npp'].rolling(window=3, center=True).mean()
+    df['N*_smooth']   = df['N*'].rolling(window=3, center=True).mean()
     df['TanDelta_smooth'] = df['TanDelta'].rolling(window=3, center=True).mean()
+
     return df, temp
+
 
 
 # ——— 4) IVE-test cleaner ———
@@ -193,10 +234,18 @@ def clean_ive_file(buffer):
     df, temp = _load_raw_df_ive(buffer, col_names)
 
     # convert and smooth Np & Ns
+    df['Strain'] = pd.to_numeric(df['Strain'], errors='coerce')
     df['Gp'] = pd.to_numeric(df['Gp'], errors='coerce')
     df['Gpp'] = pd.to_numeric(df['Gpp'], errors='coerce')
+    df['Np']       = pd.to_numeric(df['Np'],       errors='coerce')
+    df['Npp']      = pd.to_numeric(df['Npp'],      errors='coerce')
+    df['TanDelta'] = pd.to_numeric(df['TDelt'],    errors='coerce')
+
     df['Gp_smooth'] = df['Gp'].rolling(window=3, center=True).mean()
     df['Gpp_smooth'] = df['Gpp'].rolling(window=3, center=True).mean()
+    df['Np_smooth']       = df['Np'].rolling(window=3, center=True).mean()
+    df['Npp_smooth']      = df['Npp'].rolling(window=3, center=True).mean()
+    df['TanDelta_smooth'] = df['TanDelta'].rolling(window=3, center=True).mean()
     # ensure time is numeric
     df['Freq'] = pd.to_numeric(df['Freq'], errors='coerce')
     return df, temp
@@ -212,6 +261,7 @@ def clean_plastequiv_file(buffer):
         "UTemp","LTemp","Temp","Pressure","Force","Reserve1","Reserve2"
     ]
     df, temp = _load_raw_df_plastequiv(buffer, col_names)
+    df['Strain'] = pd.to_numeric(df['Strain'], errors='coerce')
     df['Sp'] = pd.to_numeric(df['Sp'],  errors='coerce')
     df['Sp_smooth'] = df['Sp'].rolling(window=5, center=True).mean()
     df['Time'] = pd.to_numeric(df['Time'], errors='coerce')
@@ -221,10 +271,16 @@ def clean_plastequiv_file(buffer):
 # ——— UI ———
 st.title("RPA Post-Processing Tool")
 
-mode = st.selectbox(
-    "Choose mode:",
-    ["Cure Test", "Scorch Test", "Dynamic Test", "Plastequiv Test", "IVE Test"],
-)
+# your actual mode keys
+modes = ["Cure Test", "Scorch Test", "Dynamic Test", "IVE Test", "Plastequiv Test"]
+
+# how you want them to appear
+display_names = {
+    "Dynamic Test": "Dynamic Test/Strain Sweep",
+    "IVE Test": "IVE Test/Frequency Sweep",
+}
+
+mode = st.selectbox("Choose mode:", modes, format_func=lambda key: display_names.get(key, key))
 
 # per-mode uploader
 key_map = {
@@ -299,17 +355,17 @@ with tab_graph:
         x_axis  = "Time"
         x_label = "Time [min]"
     elif mode == "Dynamic Test":
-        opts    = ["TanDelta", "Gp"]
+        opts    = ["TanDelta", "Gp", "Gpp", "Np", "Npp", "N*"]
         x_axis  = "Strain"
         x_label = "Strain"
-    elif mode == "Plastequiv Test":
-        opts    = ["Sp"]
-        x_axis  = "Time"
-        x_label = "Time [min]"
     elif mode == "IVE Test":
         opts    = ["Gp & Gpp", "Gp", "Gpp"]
         x_axis  = "Freq"
         x_label = "Frequency [Hz]"
+    elif mode == "Plastequiv Test":
+        opts    = ["Sp"]
+        x_axis  = "Time"
+        x_label = "Time [min]"
 
     # controls layout
     if mode == "Dynamic Test":
@@ -397,14 +453,10 @@ with tab_graph:
 
 
             # select y
-            if metric in ("Gp", "Sp", "Gpp"):
+            if metric in ("Sp", "Gp", "Gpp", "Np", "Npp", "N*"):
                 y = df[f"{metric}_smooth"]
-            elif metric == "Alpha":
-                y = df["Sp_smooth"] / df["Sp"].max()
             elif metric == "TanDelta":
-                y = df["TDelt"]
-            elif metric in ("Np", "Ns"):
-                y = df[f"{metric}_smooth"]
+                y = df["TanDelta_smooth"]
 
 
             lbl = name if legend_choice == "Filename" else nicknames[name]
@@ -435,8 +487,8 @@ with tab_graph:
         ax.set_title(title, fontsize=TITLE_FS)
         ax.set_xlabel(x_label, fontsize=LABEL_FS)
         
-        if metric in ("Gp", "Sp", "Gpp"):
-            y_label = f"Torque ({metric}) [dNm]"
+        if metric in ("Sp", "Gp", "Gpp", "Np", "Npp", "N*"):
+            y_label = f"{metric} [dNm]"
         elif metric == "Gp & Gpp":
             y_label = "Torque (Gp & Gpp) [dNm]"
         else:
@@ -448,8 +500,12 @@ with tab_graph:
 
 
         # pin bottom & left to data‐origin
-        ax.set_xlim(left=0)
-        ax.set_ylim(bottom=0)
+        if ax.get_xscale() != "log":
+            ax.set_xlim(left=0)
+
+        if ax.get_yscale() != "log":
+            ax.set_ylim(bottom=0)
+            
         ax.spines["right"].set_visible(True)
         ax.spines["top"].set_visible(True)
 
@@ -467,6 +523,8 @@ with tab_graph:
         else:
             leg = ax.legend(hnds, lbls, title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="lower right", frameon=True, edgecolor='black')
         leg.get_frame().set_linewidth(0.5)
+
+
 
         # render and download
         st.pyplot(fig, use_container_width=False)
