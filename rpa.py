@@ -25,6 +25,10 @@ div[role="tabpanel"] { min-height: 500px !important; }
 
 
 def _read_test_temp(lines, search_header):
+    search_header = (
+        "Time,Strain,Torque,Torque,Torque,Modulus,Modulus,Modulus,Compl,Compl,Compl,"
+        "Visc,Visc,Visc,GenericB,Temp,Temp,Temp,Pressure,Force,Reserve1,Reserve2"
+    )
     idx = next((i for i, L in enumerate(lines) if L.strip() == search_header), None)
     if idx is None or idx < 7:
         return None
@@ -34,6 +38,7 @@ def _read_test_temp(lines, search_header):
         return float(parts[-1])
     except:
         return "0"
+
 
 
 # ——— Cure low-level loader ———
@@ -54,6 +59,7 @@ def _load_raw_df_cure(buffer, col_names):
 
     temp = _read_test_temp(lines, search_header)
     return pd.read_csv(StringIO(data_str), names=col_names), temp
+
 
 
 # ——— Dynamic low-level loader ———
@@ -84,7 +90,6 @@ def _load_raw_df_dynamic(buffer, col_names):
 
     temp = _read_test_temp(lines, search_header)
     return pd.read_csv(StringIO(data_str), names=col_names), temp
-
 
 
 
@@ -119,7 +124,6 @@ def _load_raw_df_ive(buffer, col_names):
 
     temp = _read_test_temp(lines, search_header)
     return pd.read_csv(StringIO(data_str), names=col_names), temp
-
 
 
 
@@ -172,6 +176,7 @@ def clean_cure_file(buffer):
     return df, temp
 
 
+
 # ——— 2) Scorch-test cleaner ———
 @st.cache_data
 def clean_scorch_file(buffer):
@@ -190,6 +195,7 @@ def clean_scorch_file(buffer):
     return df, temp
 
 
+
 # ——— 3) Dynamic-test cleaner ———
 @st.cache_data
 def clean_dynamic_file(buffer):
@@ -202,6 +208,8 @@ def clean_dynamic_file(buffer):
 
     # convert key columns to numeric
     df['Strain']   = pd.to_numeric(df['Strain'],   errors='coerce')
+    df['UTemp']   = pd.to_numeric(df['UTemp'],   errors='coerce')
+
     df['Gp']       = pd.to_numeric(df['Gp'],       errors='coerce')
     df['Gpp']      = pd.to_numeric(df['Gpp'],      errors='coerce')
     df['Np']       = pd.to_numeric(df['Np'],       errors='coerce')
@@ -251,6 +259,7 @@ def clean_ive_file(buffer):
     return df, temp
 
 
+
 # ——— 5) Plastequiv-test cleaner ———
 @st.cache_data
 def clean_plastequiv_file(buffer):
@@ -268,18 +277,15 @@ def clean_plastequiv_file(buffer):
     return df, temp
 
 
+
+
 # ——— UI ———
 st.title("RPA Post-Processing Tool")
-
-# your actual mode keys
-modes = ["Cure Test", "Scorch Test", "Dynamic Test", "IVE Test", "Plastequiv Test"]
-
-# how you want them to appear
+modes = ["Cure Test", "Scorch Test", "Dynamic Test", "IVE Test", "Temperature Sweep", "Plastequiv Test"]
 display_names = {
     "Dynamic Test": "Dynamic Test/Strain Sweep",
     "IVE Test": "IVE Test/Frequency Sweep",
 }
-
 mode = st.selectbox("Choose mode:", modes, format_func=lambda key: display_names.get(key, key))
 
 # per-mode uploader
@@ -287,23 +293,21 @@ key_map = {
     "Cure Test":   "uploader_cure",
     "Scorch Test": "uploader_scorch",
     "Dynamic Test": "uploader_dynamic",
+    "IVE Test": "uploader_ive",
     "Plastequiv Test":  "uploader_plastequiv",
-    "IVE Test": "uploader_ive"
+    "Temperature Sweep": "uploader_temp_sweep"
 }
+
 labels = {
     "Cure Test":      "Upload Cure-test .erp files",
     "Scorch Test":    "Upload Scorch-test .erp files",
     "Dynamic Test":   "Upload dynamic-test .erp files",
+    "IVE Test": "Upload IVE-test .erp files",
     "Plastequiv Test":     "Upload Plastequiv-test .erp files",
-    "IVE Test": "Upload IVE-test .erp files"
+    "Temperature Sweep":  "Upload Temperature Sweep .erp files"
 }
 
-uploaded = st.file_uploader(
-    labels[mode],
-    type=['erp','txt','csv'],
-    accept_multiple_files=True,
-    key=key_map[mode]
-)
+uploaded = st.file_uploader(labels[mode], type=['erp'], accept_multiple_files=True, key=key_map[mode])
 
 if not uploaded:
     st.info("📂 Please upload one or more files to continue.")
@@ -323,6 +327,8 @@ for f in uploaded:
             df, temp = clean_ive_file(f)
         elif mode == "Plastequiv Test":
             df, temp = clean_plastequiv_file(f)
+        elif mode == "Temperature Sweep":
+            df, temp = clean_dynamic_file(f)  # assuming same format as Dynamic Test
         processed[f.name] = (df, temp)
     except Exception as e:
         st.error(f"⚠️ Failed **{f.name}**: {e}")
@@ -366,6 +372,10 @@ with tab_graph:
         opts    = ["Sp"]
         x_axis  = "Time"
         x_label = "Time [min]"
+    elif mode == "Temperature Sweep":
+        opts    = ["Gp", "Gpp", "Np", "Npp", "N*", "TanDelta"]
+        x_axis  = "UTemp"
+        x_label = "Temp [C]"
 
     # controls layout
     if mode == "Dynamic Test":
@@ -449,7 +459,6 @@ with tab_graph:
             if mode == "Dynamic Test" and phase != "Both":
                 peak = df[x_axis].idxmax()
                 df = df.iloc[:peak+1] if phase == "Go" else df.iloc[peak:]
-            
 
 
             # select y
@@ -469,7 +478,6 @@ with tab_graph:
                     ax.plot(df[x_axis], df[f"{metric}_smooth"], linewidth=LINEWIDTH, label=lbl)
                 continue
 
-
             ax.plot(df[x_axis], y, color=color_map[name], linewidth=LINEWIDTH, label=lbl)
 
 
@@ -480,9 +488,11 @@ with tab_graph:
         elif mode == "Dynamic Test":
             title = f"RPA - Strain Sweep {range_lb} at {temp_lb}°C - {metric} vs {x_axis}"
         elif mode == "IVE Test":
-            title = f"RPA - IVE Test {temp_lb}°C - {metric} vs Frequency"
+            title = f"RPA - Frequency Sweep {temp_lb}°C - {metric} vs Frequency"
         elif mode == "Plastequiv Test":
             title = f"RPA - Plastequiv Test {temp_lb}°C - {metric} vs {x_axis}"
+        elif mode == "Temperature Sweep":
+            title = f"RPA - Temperature Sweep {temp_lb}°C - {metric} vs Temperature"
 
         ax.set_title(title, fontsize=TITLE_FS)
         ax.set_xlabel(x_label, fontsize=LABEL_FS)
@@ -749,28 +759,29 @@ with tab_data:
         df, temp = processed[name]
 
         if mode == "Cure Test":
-            # first 22 columns → rename to cure_names
             df_display = df.iloc[:, :22].copy()
             alpha = df_display["Sp"] / df_display["Sp"].max()
             df_display.insert(loc=2, column="Alpha", value=alpha)
             st.dataframe(df_display, use_container_width=True)
 
         elif mode == "Scorch Test":
-            # first 22 columns → rename to scorch_names
             df_display = df.iloc[:, :22].copy()
             alpha = df_display["Sp"] / df_display["Sp"].max()
             df_display.insert(loc=2, column="Alpha", value=alpha)
             st.dataframe(df_display, use_container_width=True)
 
         elif mode == "Dynamic Test":
-            # first 27 columns → rename to sweep_names
             df_display = df.iloc[:, :27].copy()
             st.dataframe(df_display, use_container_width=True)
-
-        elif mode == "Plastequiv Test":
+        
+        elif mode == "Temperature Sweep":
             df_display = df.iloc[:, :22].copy()
             st.dataframe(df_display, use_container_width=True)
 
         elif mode == "IVE Test":
+            df_display = df.iloc[:, :27].copy()
+            st.dataframe(df_display, use_container_width=True)
+
+        elif mode == "Plastequiv Test":
             df_display = df.iloc[:, :27].copy()
             st.dataframe(df_display, use_container_width=True)
