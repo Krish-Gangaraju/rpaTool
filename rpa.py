@@ -172,6 +172,8 @@ def clean_cure_file(buffer):
     df['Sp'] = pd.to_numeric(df['Sp'],  errors='coerce')
     df['Gp_smooth'] = df['Gp'].rolling(window=3, center=True).mean()
     df['Sp_smooth'] = df['Sp'].rolling(window=3, center=True).mean()
+    alpha = df['Sp'] / df['Sp'].max()
+    df.insert(loc=5, column='Alpha', value=alpha)
     df['Time'] = pd.to_numeric(df['Time'], errors='coerce')
     return df, temp
 
@@ -191,6 +193,9 @@ def clean_scorch_file(buffer):
     df['Sp'] = pd.to_numeric(df['Sp'],  errors='coerce')
     df['Gp_smooth'] = df['Gp'].rolling(window=5, center=True).mean()
     df['Sp_smooth'] = df['Sp'].rolling(window=5, center=True).mean()
+    alpha = df['Sp'] / df['Sp'].max()
+    df.insert(loc=5, column='Alpha', value=alpha)
+    df['Alpha'] = df['Alpha'].rolling(window=4, center=True).mean()
     df['Time'] = pd.to_numeric(df['Time'], errors='coerce')
     return df, temp
 
@@ -214,17 +219,16 @@ def clean_dynamic_file(buffer):
     df['Gpp']      = pd.to_numeric(df['Gpp'],      errors='coerce')
     df['Np']       = pd.to_numeric(df['Np'],       errors='coerce')
     df['Npp']      = pd.to_numeric(df['Npp'],      errors='coerce')
+    df['Ns']       = pd.to_numeric(df['Ns'],       errors='coerce')
     df['TanDelta'] = pd.to_numeric(df['TDelt'],    errors='coerce')
 
-    # calculate composite N*
-    df['N*']   = np.sqrt(df['Np']**2 + df['Npp']**2)
 
     # apply 3-point centered rolling smoothing
     df['Gp_smooth']       = df['Gp'].rolling(window=3, center=True).mean()
     df['Gpp_smooth']      = df['Gpp'].rolling(window=3, center=True).mean()
     df['Np_smooth']       = df['Np'].rolling(window=3, center=True).mean()
     df['Npp_smooth']      = df['Npp'].rolling(window=3, center=True).mean()
-    df['N*_smooth']   = df['N*'].rolling(window=3, center=True).mean()
+    df['Ns_smooth']       = df['Ns'].rolling(window=3, center=True).mean()
     df['TanDelta_smooth'] = df['TanDelta'].rolling(window=3, center=True).mean()
 
     return df, temp
@@ -247,12 +251,14 @@ def clean_ive_file(buffer):
     df['Gpp'] = pd.to_numeric(df['Gpp'], errors='coerce')
     df['Np']       = pd.to_numeric(df['Np'],       errors='coerce')
     df['Npp']      = pd.to_numeric(df['Npp'],      errors='coerce')
+    df['Ns']      = pd.to_numeric(df['Ns'],       errors='coerce')
     df['TanDelta'] = pd.to_numeric(df['TDelt'],    errors='coerce')
 
     df['Gp_smooth'] = df['Gp'].rolling(window=3, center=True).mean()
     df['Gpp_smooth'] = df['Gpp'].rolling(window=3, center=True).mean()
     df['Np_smooth']       = df['Np'].rolling(window=3, center=True).mean()
     df['Npp_smooth']      = df['Npp'].rolling(window=3, center=True).mean()
+    df['Ns_smooth']       = df['Ns'].rolling(window=3, center=True).mean()
     df['TanDelta_smooth'] = df['TanDelta'].rolling(window=3, center=True).mean()
     # ensure time is numeric
     df['Freq'] = pd.to_numeric(df['Freq'], errors='coerce')
@@ -272,7 +278,12 @@ def clean_plastequiv_file(buffer):
     df, temp = _load_raw_df_plastequiv(buffer, col_names)
     df['Strain'] = pd.to_numeric(df['Strain'], errors='coerce')
     df['Sp'] = pd.to_numeric(df['Sp'],  errors='coerce')
-    df['Sp_smooth'] = df['Sp'].rolling(window=5, center=True).mean()
+    df['Sp_smooth'] = df['Sp'].rolling(window=3, center=True).mean()
+    df['Spp'] = pd.to_numeric(df['Spp'],  errors='coerce')
+    df['Ss'] = pd.to_numeric(df['Ss'],  errors='coerce')
+    df['Ss_smooth'] = df['Ss'].rolling(window=2, center=True).mean()
+
+    
     df['Time'] = pd.to_numeric(df['Time'], errors='coerce')
     return df, temp
 
@@ -281,10 +292,10 @@ def clean_plastequiv_file(buffer):
 
 # ——— UI ———
 st.title("RPA Post-Processing Tool")
-modes = ["Cure Test", "Scorch Test", "Dynamic Test", "IVE Test", "Temperature Sweep", "Plastequiv Test"]
+modes = ["Cure Test", "Scorch Test", "Dynamic Test", "IVE Test", "Temperature Sweep", "Plastequiv Test", "Indus - Plastequiv Test"]
 display_names = {
     "Dynamic Test": "Dynamic Test/Strain Sweep",
-    "IVE Test": "IVE Test/Frequency Sweep",
+    "IVE Test": "Frequency Sweep (includes IVE Test)",
 }
 mode = st.selectbox("Choose mode:", modes, format_func=lambda key: display_names.get(key, key))
 
@@ -295,6 +306,7 @@ key_map = {
     "Dynamic Test": "uploader_dynamic",
     "IVE Test": "uploader_ive",
     "Plastequiv Test":  "uploader_plastequiv",
+    "Indus - Plastequiv Test": "uploader_indus_plastequiv",
     "Temperature Sweep": "uploader_temp_sweep"
 }
 
@@ -304,6 +316,7 @@ labels = {
     "Dynamic Test":   "Upload dynamic-test .erp files",
     "IVE Test": "Upload IVE-test .erp files",
     "Plastequiv Test":     "Upload Plastequiv-test .erp files",
+    "Indus - Plastequiv Test": "Upload Plastequiv-test .erp files",
     "Temperature Sweep":  "Upload Temperature Sweep .erp files"
 }
 
@@ -325,7 +338,7 @@ for f in uploaded:
             df, temp = clean_dynamic_file(f)
         elif mode == "IVE Test":
             df, temp = clean_ive_file(f)
-        elif mode == "Plastequiv Test":
+        elif mode == "Plastequiv Test" or mode == "Indus - Plastequiv Test":
             df, temp = clean_plastequiv_file(f)
         elif mode == "Temperature Sweep":
             df, temp = clean_dynamic_file(f)  # assuming same format as Dynamic Test
@@ -353,32 +366,113 @@ LINEWIDTH       = 1.5
 
 # — Graph Interface —
 with tab_graph:
-    st.subheader(f"{mode} — pick curves to plot")
+    st.subheader(f"{mode}")
 
-    # choose metrics and axes per mode
-    if mode in ("Cure Test", "Scorch Test"):
+    if mode == "Cure Test":
         opts    = ["Sp", "Gp", "Alpha"]
         x_axis  = "Time"
         x_label = "Time [min]"
-    elif mode == "Dynamic Test":
-        opts    = ["TanDelta", "Gp", "Gpp", "Np", "Npp", "N*"]
-        x_axis  = "Strain"
-        x_label = "Strain"
-    elif mode == "IVE Test":
-        opts    = ["Gp & Gpp", "Gp", "Gpp"]
-        x_axis  = "Freq"
-        x_label = "Frequency [Hz]"
-    elif mode == "Plastequiv Test":
-        opts    = ["Sp"]
+
+        # Controls
+        col1, col2 = st.columns([1, 1], gap="large")
+        with col1:
+            metric = st.radio("Metric", opts, horizontal=True)
+        with col2:
+            legend_choice = st.radio("Legend label:", ["Filename", "Nickname"], horizontal=True)
+
+        # File selection
+        select_all = st.checkbox("Select All", value=True)
+        to_plot = [name for name in sorted(processed)
+                   if st.checkbox(re.sub(r'(?i)\.erp$', '', name), value=select_all, key=f"cb_{mode}_{name}")]
+        if not to_plot:
+            st.info("Select at least one file to plot.")
+        else:
+            # Prepare
+            palette   = plt.get_cmap('tab20').colors
+            color_map = {n: palette[i % len(palette)] for i, n in enumerate(sorted(processed))}
+            nicknames = {n: f"Mix{i+1}" for i, n in enumerate(sorted(processed))}
+            temp      = next(iter(processed.values()))[1]
+            max_t     = max(df['Time'].max() for df, _ in processed.values())
+            time_lb   = f"{max_t:.0f}"
+            temp_lb   = f"{temp:.0f}"
+
+            # Plot
+            fig, ax = plt.subplots(figsize=(3.5, 3.5), constrained_layout=True)
+            ax.set_box_aspect(1)
+            for name in to_plot:
+                df, _ = processed[name]
+                # strip .erp extension for filename legend
+                clean_name = re.sub(r'(?i)\.erp$', '', name)
+                lbl = clean_name if legend_choice == "Filename" else nicknames[name]
+                if metric == "Sp":
+                    y = df['Sp_smooth']
+                elif metric == "Gp":
+                    y = df['Gp_smooth']
+                else:  # Alpha
+                    y = df['Alpha']
+                ax.plot(df[x_axis], y, color=color_map[name], linewidth=LINEWIDTH, label=lbl)
+
+            ax.set_title(f"RPA - Cure Test {temp_lb}°C/{time_lb}min - {metric} vs {x_axis}", fontsize=TITLE_FS)
+            ax.set_xlabel(x_label, fontsize=LABEL_FS)
+            ax.set_ylabel(metric if metric == "Alpha" else f"{metric} [dNm]", fontsize=LABEL_FS)
+            ax.tick_params(axis="both", labelsize=TICK_FS)
+            ax.set_xlim(left=0); ax.set_ylim(bottom=0)
+            leg = ax.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="lower right", frameon=True, edgecolor='black')
+            leg.get_frame().set_linewidth(0.5)
+
+            st.pyplot(fig, use_container_width=False)
+            buf = io.BytesIO(); fig.savefig(buf, format="png", dpi=300); buf.seek(0)
+            st.download_button("Download plot as PNG", data=buf, file_name="rpa_plot.png", mime="image/png")
+
+
+    elif mode == "Scorch Test":
+        opts    = ["Sp", "Gp", "Alpha"]
         x_axis  = "Time"
         x_label = "Time [min]"
-    elif mode == "Temperature Sweep":
-        opts    = ["Gp", "Gpp", "Np", "Npp", "N*", "TanDelta"]
-        x_axis  = "UTemp"
-        x_label = "Temp [C]"
+        col1, col2 = st.columns([1, 1], gap="large")
+        with col1:
+            metric = st.radio("Metric", opts, horizontal=True)
+        with col2:
+            legend_choice = st.radio("Legend label:", ["Filename", "Nickname"], horizontal=True)
+        select_all = st.checkbox("Select All", value=True)
+        to_plot = [name for name in sorted(processed)
+                   if st.checkbox(re.sub(r'(?i)\.erp$', '', name), value=select_all, key=f"cb_{mode}_{name}")]
+        if not to_plot:
+            st.info("Select at least one file to plot.")
+        else:
+            palette   = plt.get_cmap('tab20').colors
+            color_map = {n: palette[i % len(palette)] for i, n in enumerate(sorted(processed))}
+            nicknames = {n: f"Mix{i+1}" for i, n in enumerate(sorted(processed))}
+            temp      = next(iter(processed.values()))[1]
+            max_t     = max(df['Time'].max() for df, _ in processed.values())
+            time_lb   = f"{max_t:.0f}"
+            temp_lb   = f"{temp:.0f}"
 
-    # controls layout
-    if mode == "Dynamic Test":
+            fig, ax = plt.subplots(figsize=(3.5, 3.5), constrained_layout=True)
+            ax.set_box_aspect(1)
+            for name in to_plot:
+                df, _ = processed[name]
+                clean_name = re.sub(r'(?i)\.erp$', '', name)
+                lbl = clean_name if legend_choice == "Filename" else nicknames[name]
+                if metric == "Sp": y = df['Sp_smooth']
+                elif metric == "Gp": y = df['Gp_smooth']
+                else:                y = df['Alpha']
+                ax.plot(df[x_axis], y, color=color_map[name], linewidth=LINEWIDTH, label=lbl)
+
+            ax.set_title(f"RPA - Scorch Test {temp_lb}°C/{time_lb}min - {metric} vs {x_axis}", fontsize=TITLE_FS)
+            ax.set_xlabel(x_label, fontsize=LABEL_FS); ax.set_ylabel(metric if metric=="Alpha" else f"{metric} [dNm]", fontsize=LABEL_FS)
+            ax.tick_params(axis="both", labelsize=TICK_FS); ax.set_xlim(0); ax.set_ylim(0)
+            leg = ax.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="lower right", frameon=True, edgecolor='black'); leg.get_frame().set_linewidth(0.5)
+
+            st.pyplot(fig, use_container_width=False)
+            buf = io.BytesIO(); fig.savefig(buf, format="png", dpi=300); buf.seek(0)
+            st.download_button("Download plot as PNG", data=buf, file_name="rpa_plot.png", mime="image/png")
+
+
+    elif mode == "Dynamic Test":
+        opts    = ["TanDelta", "Gp & Gpp", "Gp", "Gpp", "Np", "Npp", "Ns"]
+        x_axis  = "Strain"
+        x_label = "Strain [%]"
         col1, col2, col3 = st.columns([1, 1, 1], gap="large")
         with col1:
             metric = st.radio("Metric", opts, horizontal=True)
@@ -386,163 +480,309 @@ with tab_graph:
             phase = st.radio("Phase", ["Both", "Go", "Return"], horizontal=True)
         with col3:
             legend_choice = st.radio("Legend label:", ["Filename", "Nickname"], horizontal=True)
-    else:
+
+        select_all = st.checkbox("Select All", value=True)
+        to_plot = [name for name in sorted(processed)
+                   if st.checkbox(re.sub(r'(?i)\.erp$', '', name), value=select_all, key=f"cb_{mode}_{name}")]
+        if not to_plot:
+            st.info("Select at least one file to plot.")
+        else:
+            palette   = plt.get_cmap('tab20').colors
+            color_map = {n: palette[i % len(palette)] for i, n in enumerate(sorted(processed))}
+            nicknames = {n: f"Mix{i+1}" for i, n in enumerate(sorted(processed))}
+            temp      = next(iter(processed.values()))[1]
+            temp_lb   = f"{temp:.0f}"
+            lo_str    = min(pd.to_numeric(df['Strain'], errors='coerce').min() for df, _ in processed.values())
+            hi_str    = max(pd.to_numeric(df['Strain'], errors='coerce').max() for df, _ in processed.values())
+            range_lb  = f"{lo_str:.0f}-{hi_str:.0f}"
+
+            fig, ax = plt.subplots(figsize=(4.5, 4.5), constrained_layout=True)
+            ax.set_box_aspect(1)
+            if phase != "Both":
+                # will slice inside loop
+                pass
+
+            for name in to_plot:
+                df, _ = processed[name]
+                clean_name = re.sub(r'(?i)\.erp$', '', name)
+                lbl = clean_name if legend_choice == "Filename" else nicknames[name]
+                if phase != "Both":
+                    peak = df[x_axis].idxmax()
+                    df = df.iloc[:peak+1] if phase == "Go" else df.iloc[peak:]
+
+                if metric == "Gp & Gpp":
+                    ax.plot(df[x_axis], df['Gp_smooth'],  color=color_map[name], linewidth=LINEWIDTH, label=f"{lbl} Gp")
+                    ax.plot(df[x_axis], df['Gpp_smooth'], color=color_map[name], linewidth=LINEWIDTH, linestyle="--", label=f"{lbl} Gpp")
+                else:
+                    if metric in ("Sp", "Gp", "Gpp", "Np", "Npp", "Ns"):
+                        y = df[f"{metric}_smooth"]
+                    else:
+                        y = df["TanDelta_smooth"]
+                    ax.plot(df[x_axis], y, color=color_map[name], linewidth=LINEWIDTH, label=lbl)
+
+            ax.set_xscale("log"); ax.set_xticks([1,10,100]); ax.set_xticklabels([str(t) for t in [1,10,100]], fontsize=TICK_FS)
+            ax.set_title(f"RPA - Strain Sweep {range_lb} at {temp_lb}°C - {metric} vs {x_axis}", fontsize=TITLE_FS)
+            ax.set_xlabel(x_label, fontsize=LABEL_FS); ax.set_ylabel(metric if metric=="TanDelta" else f"{metric} [dNm]", fontsize=LABEL_FS)
+            ax.tick_params(axis="both", labelsize=TICK_FS)
+            leg = ax.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="upper left", bbox_to_anchor=(1.02, 1), frameon=True, edgecolor='black')
+            leg.get_frame().set_linewidth(0.5)
+
+            st.pyplot(fig, use_container_width=False)
+            buf = io.BytesIO(); fig.savefig(buf, format="png", dpi=300); buf.seek(0)
+            st.download_button("Download plot as PNG", data=buf, file_name="rpa_plot.png", mime="image/png")
+
+
+    elif mode == "IVE Test":
+        # ——— Controls ———
+        x_axis  = "Freq"
+        opts      = ["Gp & Gpp", "Gp", "Gpp", "Np", "Npp", "Ns", "TanDelta"]
+        col1, col2 = st.columns([1, 1], gap="large")
+        with col1:
+            metric = st.radio("Y-Axis", opts, horizontal=True)
+        with col2:
+            axis_type = st.radio("X-Axis:", ["Frequency", "Angular"], horizontal=True)
+
+        # ——— File selection ———
+        select_all = st.checkbox("Select All", value=True)
+        to_plot = [
+            name for name in sorted(processed)
+            if st.checkbox(re.sub(r'(?i)\.erp$', '', name), value=select_all, key=f"cb_{mode}_{name}")
+        ]
+        if not to_plot:
+            st.info("Select at least one file to plot.")
+        else:
+            # ——— Prep colors & nicknames ———
+            palette   = plt.get_cmap('tab20').colors
+            names     = sorted(processed.keys())
+            color_map = {n: palette[i % len(palette)] for i, n in enumerate(names)}
+            nicknames = {n: f"Mix{i+1}" for i, n in enumerate(names)}
+            temp      = next(iter(processed.values()))[1]
+            temp_lb   = f"{temp:.0f}"
+
+            # ——— Figure setup ———
+            fig, ax = plt.subplots(figsize=(4.7, 4.7), constrained_layout=True)
+            ax.set_box_aspect(1)
+            ax.set_xscale("log")
+
+            # decide x values & label
+            if axis_type == "Frequency":
+                x_vals = df[x_axis]  # df["Freq"]
+                x_label = "Frequency [Hz]"
+                x_ticks = [0.001, 0.01, 0.1, 1, 10, 100]
+            else:
+                # angular ω = 2π·f
+                x_vals = 2 * np.pi * df[x_axis]
+                x_label = "Angular Frequency [rad/s]"
+                x_ticks = [2*np.pi*t for t in [0.001, 0.01, 0.1, 1, 10, 100]]
+
+            ax.set_xlim(min(x_ticks), max(x_ticks))
+            ax.set_xticks(x_ticks)
+            ax.set_xticklabels([f"{t:.3g}" for t in x_ticks], fontsize=TICK_FS)
+            ax.grid(which="major", linestyle="-", linewidth=0.5)
+
+            # ——— Plot each mix ———
+            for name in to_plot:
+                df, _ = processed[name]
+                clean_name = re.sub(r'(?i)\.erp$', '', name)
+                lbl = clean_name  # always show cleaned filename for legend
+
+                if metric == "Gp & Gpp":
+                    ax.plot(2*np.pi*df[x_axis] if axis_type=="Angular" else df[x_axis],
+                            df["Gp"],  color=color_map[name], linewidth=LINEWIDTH, label=f"{lbl} Gp")
+                    ax.plot(2*np.pi*df[x_axis] if axis_type=="Angular" else df[x_axis],
+                            df["Gpp"], color=color_map[name], linewidth=LINEWIDTH,
+                            linestyle="--", label=f"{lbl} Gpp")
+
+                else:
+                    ax.plot(2*np.pi*df[x_axis] if axis_type=="Angular" else df[x_axis],
+                            df[metric], color=color_map[name], linewidth=LINEWIDTH, label=lbl)
+
+                # per-metric y settings
+                if metric in ("Gp & Gpp", "Gp", "Gpp"):
+                    ax.set_yscale("log")
+                    ax.set_ylim(0.001, 1)
+                    ax.set_yticks([0.001, 0.01, 0.1, 1])
+                    ax.set_yticklabels([str(t) for t in [0.001, 0.01, 0.1, 1]], fontsize=TICK_FS)
+                else:
+                    ax.set_yscale("linear")
+                    ax.margins(y=0.03)
+                    ax.ticklabel_format(style='plain', axis='y')
+
+            # ——— Titles, labels, legend ———
+            ax.set_title(f"RPA - Frequency Sweep {temp_lb}°C - {metric} vs {x_label}", fontsize=TITLE_FS)
+            ax.set_xlabel(x_label, fontsize=LABEL_FS)
+            ax.set_ylabel(f"{metric} [dNm]", fontsize=LABEL_FS)
+            ax.tick_params(axis="both", labelsize=TICK_FS)
+
+            leg = ax.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="upper left", bbox_to_anchor=(1.02, 1), frameon=True, edgecolor='black')
+            leg.get_frame().set_linewidth(0.5)
+
+            # ——— Render + download ———
+            st.pyplot(fig, use_container_width=False)
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=300)
+            buf.seek(0)
+            st.download_button("Download plot as PNG", data=buf, file_name="rpa_plot.png", mime="image/png")
+
+
+    elif mode == "Temperature Sweep":
+        opts    = ["TanDelta", "Gp & Gpp", "Gp", "Gpp", "Np", "Npp", "Ns"]
+        x_axis  = "UTemp"
+        x_label = "Temp [C]"
+        col1, col2 = st.columns([1, 1], gap="large")
+        with col1:
+            metric = st.radio("Metric", opts, horizontal=True)
+        with col2:
+            legend_choice = st.radio("Legend label:", ["Filename", "Nickname"], horizontal=True)
+        select_all = st.checkbox("Select All", value=True)
+        to_plot = [name for name in sorted(processed)
+                   if st.checkbox(re.sub(r'(?i)\.erp$', '', name), value=select_all, key=f"cb_{mode}_{name}")]
+        if not to_plot:
+            st.info("Select at least one file to plot.")
+        else:
+            palette   = plt.get_cmap('tab20').colors
+            color_map = {n: palette[i % len(palette)] for i, n in enumerate(sorted(processed))}
+            nicknames = {n: f"Mix{i+1}" for i, n in enumerate(sorted(processed))}
+            temp_lb   = f"{next(iter(processed.values()))[1]:.0f}"
+
+            fig, ax = plt.subplots(figsize=(4.5, 4.5), constrained_layout=True)
+            ax.set_box_aspect(1)
+            for name in to_plot:
+                df, _ = processed[name]
+                clean_name = re.sub(r'(?i)\.erp$', '', name)
+                lbl = clean_name if legend_choice == "Filename" else nicknames[name]
+                if metric == "Gp & Gpp":
+                    ax.plot(df[x_axis], df['Gp'],  color=color_map[name], linewidth=LINEWIDTH, label=f"{lbl} Gp")
+                    ax.plot(df[x_axis], df['Gpp'], color=color_map[name], linewidth=LINEWIDTH, linestyle="--", label=f"{lbl} Gpp")
+                else:
+                    if metric in ("Sp", "Gp", "Gpp", "Np", "Npp", "Ns"):
+                        y = df[f"{metric}"]
+                    else:
+                        y = df["TanDelta_smooth"]
+                    ax.plot(df[x_axis], y, color=color_map[name], linewidth=LINEWIDTH, label=lbl)
+
+            ax.set_title(f"Temp Sweep {temp_lb}°C - {metric} vs Temperature", fontsize=TITLE_FS)
+            ax.set_xlabel(x_label, fontsize=LABEL_FS); ax.set_ylabel(f"{metric} [dNm]", fontsize=LABEL_FS)
+            ax.tick_params(axis="both", labelsize=TICK_FS)
+            leg = ax.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="upper left", bbox_to_anchor=(1.02, 1), frameon=True, edgecolor='black')
+            leg.get_frame().set_linewidth(0.5)
+
+            st.pyplot(fig, use_container_width=False)
+            buf = io.BytesIO(); fig.savefig(buf, format="png", dpi=300); buf.seek(0)
+            st.download_button("Download plot as PNG", data=buf, file_name="rpa_plot.png", mime="image/png")
+
+
+    elif mode == "Plastequiv Test":
+        opts    = ["Sp"]
+        x_axis  = "Time"
+        x_label = "Time [sec]"
+
+        # Controls
         col1, col2 = st.columns([1, 1], gap="large")
         with col1:
             metric = st.radio("Metric", opts, horizontal=True)
         with col2:
             legend_choice = st.radio("Legend label:", ["Filename", "Nickname"], horizontal=True)
 
-
-    select_all = st.checkbox("Select All", value=True)
-    to_plot = []
-    for name in sorted(processed):
-        display_name = re.sub(r"(?i)\.erp", "", name)
-        if st.checkbox(display_name, value=select_all, key=f"cb_{mode}_{name}"):
-            to_plot.append(name)
-
-    if not to_plot:
-        st.info("Select at least one file to plot.")
-    else:
-        # prep colors & nicknames
-        palette   = plt.get_cmap('tab20').colors
-        names     = sorted(processed.keys())
-        color_map = {n: palette[i % len(palette)] for i, n in enumerate(names)}
-        nicknames = {n: f"Mix{i+1}" for i, n in enumerate(names)}
-
-        # compute labels
-        if mode in ("Cure Test", "Scorch Test"):
-            temp    = next(iter(processed.values()))[1]
-            max_t   = max(df['Time'].max() for df, _ in processed.values())
-            time_lb = f"{max_t:.0f}"
-            temp_lb = f"{temp:.0f}"
+        # File pickers
+        select_all = st.checkbox("Select All", value=True)
+        to_plot = [
+            name for name in sorted(processed)
+            if st.checkbox(re.sub(r'(?i)\.erp$', '', name), value=select_all, key=f"cb_{mode}_{name}")
+        ]
+        if not to_plot:
+            st.info("Select at least one file to plot.")
         else:
-            temp     = next(iter(processed.values()))[1]
-            temp_lb  = f"{temp:.0f}"
-            lo_str   = min(df['Strain'].min() for df, _ in processed.values())
-            hi_str   = max(df['Strain'].max() for df, _ in processed.values())
-            range_lb = f"{lo_str:.0f}-{hi_str:.0f}"
+            # Prep
+            palette   = plt.get_cmap('tab20').colors
+            color_map = {n: palette[i % len(palette)] for i, n in enumerate(sorted(processed))}
+            nicknames = {n: f"Mix{i+1}" for i, n in enumerate(sorted(processed))}
+            temp_lb   = f"{next(iter(processed.values()))[1]:.0f}"
 
-        # — Square figure & aspect —
-        fig, ax = plt.subplots(figsize=(3.5, 3.5), constrained_layout=True)
-        ax.set_box_aspect(1)
+            # Plot
+            fig, ax = plt.subplots(figsize=(3.5, 3.5), constrained_layout=True)
+            ax.set_box_aspect(1)
+            for name in to_plot:
+                df, _ = processed[name]
+                clean_name = re.sub(r'(?i)\.erp$', '', name)
+                lbl = clean_name if legend_choice == "Filename" else nicknames[name]
+                ax.plot(df[x_axis], df["Sp_smooth"], color=color_map[name], linewidth=LINEWIDTH, label=lbl)
 
-        # log-scale for Dynamic
-        if mode == "Dynamic Test":
-            ax.set_xscale("log")
-            ticks = [1, 10, 100, 1000]
-            ax.set_xticks(ticks)
-            ax.set_xticklabels([str(t) for t in ticks], fontsize=TICK_FS)
-
-        # log–log & decade ticks for IVE Test
-        if mode == "IVE Test":
-            ax.set_xscale("log")
-            ax.set_yscale("log")
-            ax.set_xlim(0.01, 100)
-            ax.set_ylim(0.001, 1)
-
-            xticks = [0.01, 0.1, 1, 10, 100]
-            yticks = [0.001, 0.01, 0.1, 1]
-            ax.set_xticks(xticks)
-            ax.set_xticklabels([str(t) for t in xticks], fontsize=TICK_FS)
-            ax.set_yticks(yticks)
-            ax.set_yticklabels([str(t) for t in yticks], fontsize=TICK_FS)
-
-            ax.grid(which="major", linestyle="-", linewidth=0.5)
-
-
-        # plot each mix
-        for name in to_plot:
-            df, _ = processed[name]
-
-            # split Go/Return
-            if mode == "Dynamic Test" and phase != "Both":
-                peak = df[x_axis].idxmax()
-                df = df.iloc[:peak+1] if phase == "Go" else df.iloc[peak:]
-
-
-            # select y
-            if metric in ("Sp", "Gp", "Gpp", "Np", "Npp", "N*"):
-                y = df[f"{metric}_smooth"]
-            elif metric == "TanDelta":
-                y = df["TanDelta_smooth"]
-
-
-            lbl = name if legend_choice == "Filename" else nicknames[name]
-
-            if mode == "IVE Test":
-                if metric == "Gp & Gpp":
-                    ax.plot(df[x_axis], df["Gp_smooth"],  linewidth=LINEWIDTH, color=color_map[name], label=f"{lbl} Gp")
-                    ax.plot(df[x_axis], df["Gpp_smooth"], linewidth=LINEWIDTH, color=color_map[name], linestyle="--", label=f"{lbl} Gpp")
-                else:
-                    ax.plot(df[x_axis], df[f"{metric}_smooth"], linewidth=LINEWIDTH, label=lbl)
-                continue
-
-            ax.plot(df[x_axis], y, color=color_map[name], linewidth=LINEWIDTH, label=lbl)
-
-
-
-        # titles & labels
-        if mode in ("Cure Test", "Scorch Test"):
-            title = f"RPA - {mode} {temp_lb}°C/{time_lb}min - {metric} vs {x_axis}"
-        elif mode == "Dynamic Test":
-            title = f"RPA - Strain Sweep {range_lb} at {temp_lb}°C - {metric} vs {x_axis}"
-        elif mode == "IVE Test":
-            title = f"RPA - Frequency Sweep {temp_lb}°C - {metric} vs Frequency"
-        elif mode == "Plastequiv Test":
-            title = f"RPA - Plastequiv Test {temp_lb}°C - {metric} vs {x_axis}"
-        elif mode == "Temperature Sweep":
-            title = f"RPA - Temperature Sweep {temp_lb}°C - {metric} vs Temperature"
-
-        ax.set_title(title, fontsize=TITLE_FS)
-        ax.set_xlabel(x_label, fontsize=LABEL_FS)
-        
-        if metric in ("Sp", "Gp", "Gpp", "Np", "Npp", "N*"):
-            y_label = f"{metric} [dNm]"
-        elif metric == "Gp & Gpp":
-            y_label = "Torque (Gp & Gpp) [dNm]"
-        else:
-            y_label = metric
-        ax.set_ylabel(y_label, fontsize=LABEL_FS)
-
-
-        ax.tick_params(axis="both", labelsize=TICK_FS)
-
-
-        # pin bottom & left to data‐origin
-        if ax.get_xscale() != "log":
+            ax.set_title(f"RPA - Plastequiv Test {temp_lb}°C - Sp vs {x_axis}", fontsize=TITLE_FS)
+            ax.set_xlabel(x_label, fontsize=LABEL_FS)
+            ax.set_ylabel("Sp [dNm]", fontsize=LABEL_FS)
+            ax.tick_params(axis="both", labelsize=TICK_FS)
             ax.set_xlim(left=0)
+            leg = ax.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="upper right", frameon=True, edgecolor='black')
+            leg.get_frame().set_linewidth(0.5)
 
-        if ax.get_yscale() != "log":
-            ax.set_ylim(bottom=0)
-            
-        ax.spines["right"].set_visible(True)
-        ax.spines["top"].set_visible(True)
+            st.pyplot(fig, use_container_width=False)
+            buf = io.BytesIO(); fig.savefig(buf, format="png", dpi=300); buf.seek(0)
+            st.download_button("Download plot as PNG", data=buf,
+                            file_name="rpa_plot.png", mime="image/png")
 
-    
 
-        # legend _inside_ plot
-        handles, labels = ax.get_legend_handles_labels()
-        if legend_choice == "Filename":
-            labels = [re.sub(r"(?i)\.erp", "", lbl) for lbl in labels]
+    elif mode == "Indus - Plastequiv Test":
+        x_axis  = "Time"
+        x_label = "Time [sec]"
 
-        sorted_pairs    = sorted(zip(labels, handles), key=lambda x: x[0])
-        lbls, hnds      = zip(*sorted_pairs)
-        if mode == "IVE Test":
-            leg = ax.legend(hnds, lbls, title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="lower right", frameon=True, edgecolor='black')
+        # Legend choice only
+        col1, _ = st.columns([1, 1], gap="large")
+        with col1:
+            legend_choice = st.radio("Legend label:", ["Filename", "Nickname"], horizontal=True)
+
+        # File pickers
+        select_all = st.checkbox("Select All", value=True)
+        to_plot = [
+            name for name in sorted(processed)
+            if st.checkbox(re.sub(r'(?i)\.erp$', '', name), value=select_all, key=f"cb_{mode}_{name}")
+        ]
+        if not to_plot:
+            st.info("Select at least one file to plot.")
         else:
-            leg = ax.legend(hnds, lbls, title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="lower right", frameon=True, edgecolor='black')
-        leg.get_frame().set_linewidth(0.5)
+            palette   = plt.get_cmap('tab20').colors
+            color_map = {n: palette[i % len(palette)] for i, n in enumerate(sorted(processed))}
+            nicknames = {n: f"Mix{i+1}" for i, n in enumerate(sorted(processed))}
+
+            # Two‐panel: Ss on left, Sp & Spp on right
+            colL, colR = st.columns(2, gap="large")
+
+            with colL:
+                fig1, ax1 = plt.subplots(figsize=(3.5, 3.5), constrained_layout=True)
+                ax1.set_box_aspect(1)
+                for name in to_plot:
+                    df, _ = processed[name]
+                    clean_name = re.sub(r'(?i)\.erp$', '', name)
+                    lbl = clean_name if legend_choice == "Filename" else nicknames[name]
+                    ax1.plot(df[x_axis], df["Ss"], color=color_map[name], linewidth=LINEWIDTH, label=lbl)
+                ax1.set_title(f"Plastequiv Test - Ss vs Time", fontsize=TITLE_FS)
+                ax1.set_xlabel(x_label, fontsize=LABEL_FS)
+                ax1.set_ylabel("Ss [dNm]", fontsize=LABEL_FS)
+                ax1.tick_params(axis="both", labelsize=TICK_FS)
+                leg1 = ax1.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS)
+                leg1.get_frame().set_linewidth(0.5)
+                st.pyplot(fig1, use_container_width=True)
+
+            with colR:
+                fig2, ax2 = plt.subplots(figsize=(3.5, 3.5), constrained_layout=True)
+                ax2.set_box_aspect(1)
+                for name in to_plot:
+                    df, _ = processed[name]
+                    clean_name = re.sub(r'(?i)\.erp$', '', name)
+                    lbl = clean_name if legend_choice == "Filename" else nicknames[name]
+                    ax2.plot(df[x_axis], df["Sp"], color=color_map[name], linewidth=LINEWIDTH, label=f"{lbl} Sp")
+                    ax2.plot(df[x_axis], df["Spp"], color=color_map[name], linewidth=LINEWIDTH,
+                            linestyle="--", label=f"{lbl} Spp")
+                ax2.set_title("Plastequiv Test - Sp & Spp vs Time", fontsize=TITLE_FS)
+                ax2.set_xlabel(x_label, fontsize=LABEL_FS)
+                ax2.set_ylabel("Sp & Spp [dNm]", fontsize=LABEL_FS)
+                ax2.tick_params(axis="both", labelsize=TICK_FS)
+                leg2 = ax2.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS)
+                leg2.get_frame().set_linewidth(0.5)
+                st.pyplot(fig2, use_container_width=True)
 
 
 
-        # render and download
-        st.pyplot(fig, use_container_width=False)
-
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=300)
-        buf.seek(0)
-        st.download_button("Download plot as PNG", data=buf, file_name="rpa_plot.png", mime="image/png")
 
 
 
@@ -591,6 +831,7 @@ with tab_key:
         # build the DataFrame, then reorder its columns (filenames) alphabetically
         summary_df = pd.DataFrame(summary).T
         summary_df = summary_df.sort_index(axis=0)
+        summary_df.index = summary_df.index.str.replace(r'(?i)\.erp$', '', regex=True)
         st.dataframe(summary_df, use_container_width=True)
 
         ####################################################################
@@ -619,6 +860,7 @@ with tab_key:
             })
 
         cure_law_df = pd.DataFrame(results).set_index("Mix")
+        cure_law_df.index = cure_law_df.index.str.replace(r'(?i)\.erp$', '', regex=True)
         st.dataframe(cure_law_df, use_container_width=True)
 
 
@@ -655,39 +897,87 @@ with tab_key:
         # build DataFrame with metrics as rows, filenames as columns
         summary_df = pd.DataFrame(summary).T
         summary_df = summary_df.sort_index(axis=0)
+        summary_df.index = summary_df.index.str.replace(r'(?i)\.erp$', '', regex=True)
         st.dataframe(summary_df, use_container_width=True)
 
 
 
     elif mode == "Dynamic Test":
+        # Phase selector
         phase = st.radio("Phase", ["Both", "Go", "Return"], horizontal=True, key="dyn_test")
 
+        thresholds = [10, 20, 50]  # T10→5%, T20→10%, T50→25%
         summary = {}
-        for name, (df, temp) in processed.items():
-            peak = df['Strain'].idxmax()
-            go_df  = df.loc[:peak]
-            ret_df = df.loc[peak:]
-            summary[name] = {
-                'Max TanD (Go)':     go_df['TanDelta'].max(),
-                'T10 (Go)':          go_df.loc[go_df['Strain']>=10,  'TanDelta'].iloc[0],
-                'T20 (Go)':          go_df.loc[go_df['Strain']>=20,  'TanDelta'].iloc[0],
-                'T50 (Go)':          go_df.loc[go_df['Strain']>=50,  'TanDelta'].iloc[0],
-                'Max TanD (Ret)': ret_df['TanDelta'].max(),
-                'T10 (Ret)':         ret_df.loc[ret_df['Strain']>=10, 'TanDelta'].iloc[0],
-                'T20 (Ret)':         ret_df.loc[ret_df['Strain']>=20, 'TanDelta'].iloc[0],
-                'T50 (Ret)':         ret_df.loc[ret_df['Strain']>=50, 'TanDelta'].iloc[0]
-            }
+        intersection = {}
 
+        for name, (df, temp) in processed.items():
+            # --- Go/Return split + TanDelta thresholds ---
+            peak_idx = df['Strain'].idxmax()
+            go_df  = df.loc[:peak_idx]
+            ret_df = df.loc[peak_idx:]
+
+            d = {
+                'Max TanD (Go)':  go_df['TanDelta'].max(),
+                'Max TanD (Ret)': ret_df['TanDelta'].max(),
+            }
+            for t in thresholds:
+                cutoff = t / 2
+                idx_go  = (go_df['Strain'] - cutoff).abs().idxmin()
+                idx_ret = (ret_df['Strain'] - cutoff).abs().idxmin()
+                d[f'T{t} (Go)']  = go_df.loc[idx_go,  'TanDelta']
+                d[f'T{t} (Ret)'] = ret_df.loc[idx_ret, 'TanDelta']
+            summary[name] = d
+
+            # --- intersection of G' and G'' ---
+            diffs = df['Gp'] - df['Gpp']
+            if (diffs > 0).all() or (diffs < 0).all():
+                # no crossing
+                intersection[name] = None
+            else:
+                idx_int = diffs.abs().idxmin()
+                intersection[name] = df.loc[idx_int, 'Strain']
+
+        # --- build & display main summary table ---
         summary_df = pd.DataFrame(summary).T.sort_index()
+        go_cols  = [c for c in summary_df.columns if "(Go)"  in c]
+        ret_cols = [c for c in summary_df.columns if "(Ret)" in c]
+        summary_df = summary_df[go_cols + ret_cols]
 
         if phase == "Go":
-            cols = [c for c in summary_df.columns if "(Go)" in c]
-            summary_df = summary_df[cols]
+            summary_df = summary_df[go_cols]
         elif phase == "Return":
-            cols = [c for c in summary_df.columns if "(Ret)" in c]
-            summary_df = summary_df[cols]
+            summary_df = summary_df[ret_cols]
 
+        # scrub .erp/.eRP from mix names
+        summary_df.index = summary_df.index.str.replace(r'(?i)\.erp$', '', regex=True)
         st.dataframe(summary_df, use_container_width=True)
+
+        # --- build & display intersection table ---
+        inter_df = pd.DataFrame.from_dict(intersection, orient='index', columns=["Strain at G'=G''"])
+        inter_df.index = inter_df.index.str.replace(r'(?i)\.erp$', '', regex=True)
+        inter_df = inter_df.fillna("N/A")
+        st.dataframe(inter_df, use_container_width=True)
+
+
+
+    elif mode == "Temperature Sweep":
+        intersection_temp = {}
+        for name, (df, temp) in processed.items():
+            # signed difference
+            diff = df['Gp'] - df['Gpp']
+
+            # if no sign change at all, mark N/A
+            if (diff > 0).all() or (diff < 0).all():
+                intersection_temp[name] = None
+            else:
+                # otherwise pick the row closest to the zero‐crossing
+                idx_int = diff.abs().idxmin()
+                intersection_temp[name] = df.loc[idx_int, 'Temp']
+
+        # build the output DataFrame, replacing None with "N/A"
+        inter_temp_df = pd.DataFrame.from_dict(intersection_temp, orient='index', columns=["Temperature at G'=G''"]).fillna("N/A")
+        inter_temp_df.index = inter_temp_df.index.str.replace(r'(?i)\.erp$', '', regex=True)
+        st.dataframe(inter_temp_df, use_container_width=True)
 
 
 
@@ -703,7 +993,9 @@ with tab_key:
                 "Viscosity - Np (kPA)": last_np / 1000
             })
         summary_df = pd.DataFrame(summary).set_index("Mix")
+        summary_df.index = summary_df.index.str.replace(r'(?i)\.erp$', '', regex=True)
         st.dataframe(summary_df, use_container_width=True)
+
 
 
     elif mode == "IVE Test":
@@ -711,19 +1003,16 @@ with tab_key:
         for name in sorted(processed):
             df, temp = processed[name]
             # drop rows missing the needed columns and sort by frequency
-            df_clean = (
-                df.dropna(subset=["Freq", "Gp_smooth", "Gpp_smooth"])
-                  .sort_values("Freq")
-            )
+            df_clean = (df.dropna(subset=["Freq", "Gp", "Gpp"]).sort_values("Freq"))
 
             # 1) IVE: ratio Gp/Gpp at the lowest reported freq
             f_min   = df_clean["Freq"].iloc[0]
-            gp_min  = df_clean["Gp_smooth"].iloc[0]
-            gpp_min = df_clean["Gpp_smooth"].iloc[0]
+            gp_min  = df_clean["Gp"].iloc[0]
+            gpp_min = df_clean["Gpp"].iloc[0]
             ive_val = gp_min / gpp_min if gpp_min else float("nan")
 
             # 2) crossover freq where Gp = Gpp
-            diffs = df_clean["Gp_smooth"] - df_clean["Gpp_smooth"]
+            diffs = df_clean["Gp"] - df_clean["Gpp"]
             # find the first index where the sign flips
             idx = np.where(diffs.values[:-1] * diffs.values[1:] <= 0)[0]
             if idx.size:
@@ -741,7 +1030,48 @@ with tab_key:
             })
 
         summary_df = pd.DataFrame(summary).set_index("Mix")
+        summary_df.index = summary_df.index.str.replace(r'(?i)\.erp$', '', regex=True)
         st.dataframe(summary_df, use_container_width=True)
+
+
+
+    elif mode == "Indus - Plastequiv Test":
+        # for each mix, compute Ss & Sp max, end‐of‐run, and Sp/Spp crossover time
+        summary = []
+        for name, (df, temp) in processed.items():
+            ss_max   = df['Ss'].max()
+            ss_final = df['Ss'].iloc[-1]
+            sp_max   = df['Sp'].max()
+            sp_final = df['Sp'].iloc[-1]
+
+            # detect zero‐crossing of Sp–Spp
+            diff = df['Sp'] - df['Spp']
+            if (diff > 0).all() or (diff < 0).all():
+                t_cross = None
+            else:
+                idx_cross = diff.abs().idxmin()
+                t_cross   = df.loc[idx_cross, 'Time']
+
+            summary.append({
+                "Mix":                  name,
+                "Ss Maximum":           ss_max,
+                "Ss Final Value":       ss_final,
+                "Sp Maximum":           sp_max,
+                "Sp Final Value":       sp_final,
+                "Time at Sp=Spp (min)": t_cross
+            })
+
+        summary_df = pd.DataFrame(summary).set_index("Mix")
+        # scrub the .erp extension
+        summary_df.index = summary_df.index.str.replace(r'(?i)\.erp$', '', regex=True)
+        # replace missing crossings with "N/A"
+        summary_df = summary_df.fillna("N/A")
+
+        st.dataframe(summary_df, use_container_width=True)
+
+
+
+
 
     else:
         st.info("Key values for this mode coming soon.")
@@ -752,7 +1082,6 @@ with tab_key:
 
 # — Data Interface —
 with tab_data:
-    st.subheader("Inspect the Cleaned DataFrames")
 
     for name in sorted(processed):
         st.markdown(f"**{name}**")
@@ -760,14 +1089,10 @@ with tab_data:
 
         if mode == "Cure Test":
             df_display = df.iloc[:, :22].copy()
-            alpha = df_display["Sp"] / df_display["Sp"].max()
-            df_display.insert(loc=2, column="Alpha", value=alpha)
             st.dataframe(df_display, use_container_width=True)
 
         elif mode == "Scorch Test":
             df_display = df.iloc[:, :22].copy()
-            alpha = df_display["Sp"] / df_display["Sp"].max()
-            df_display.insert(loc=2, column="Alpha", value=alpha)
             st.dataframe(df_display, use_container_width=True)
 
         elif mode == "Dynamic Test":
@@ -780,8 +1105,14 @@ with tab_data:
 
         elif mode == "IVE Test":
             df_display = df.iloc[:, :27].copy()
+            freq_idx = df_display.columns.get_loc("Freq")
+            df_display.insert(freq_idx + 1, "Angular (rad/s)", df_display["Freq"] * 2 * np.pi)
             st.dataframe(df_display, use_container_width=True)
 
         elif mode == "Plastequiv Test":
-            df_display = df.iloc[:, :27].copy()
+            df_display = df.iloc[:, :26].copy()
+            st.dataframe(df_display, use_container_width=True)
+        
+        elif mode == "Indus - Plastequiv Test":
+            df_display = df.iloc[:, :26].copy()
             st.dataframe(df_display, use_container_width=True)
