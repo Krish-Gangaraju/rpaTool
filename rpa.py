@@ -269,23 +269,33 @@ def clean_ive_file(buffer):
 # ——— 5) Plastequiv-test cleaner ———
 @st.cache_data
 def clean_plastequiv_file(buffer):
-    # identical format to Cure
     col_names = [
         "Time","Strain","Sp","Spp","Ss","Gp","Gpp","Gs",
         "Jp","Jpp","Js","Np","Npp","Ns","TDelt",
         "UTemp","LTemp","Temp","Pressure","Force","Reserve1","Reserve2"
     ]
     df, temp = _load_raw_df_plastequiv(buffer, col_names)
-    df['Strain'] = pd.to_numeric(df['Strain'], errors='coerce')
-    df['Sp'] = pd.to_numeric(df['Sp'],  errors='coerce')
-    df['Sp_smooth'] = df['Sp'].rolling(window=3, center=True).mean()
-    df['Spp'] = pd.to_numeric(df['Spp'],  errors='coerce')
-    df['Ss'] = pd.to_numeric(df['Ss'],  errors='coerce')
-    df['Ss_smooth'] = df['Ss'].rolling(window=2, center=True).mean()
 
-    
-    df['Time'] = pd.to_numeric(df['Time'], errors='coerce')
+    # — convert to numeric —
+    df["Strain"] = pd.to_numeric(df["Strain"], errors="coerce")
+    df["Sp"]     = pd.to_numeric(df["Sp"],     errors="coerce")
+    df["Spp"]    = pd.to_numeric(df["Spp"],    errors="coerce")
+    df["Ss"]     = pd.to_numeric(df["Ss"],     errors="coerce")
+    df["Time"]   = pd.to_numeric(df["Time"],   errors="coerce")
+
+    # — 3‐point centered rolling for each —
+    df["Sp_smooth"]  = df["Sp"].rolling(window=3, center=True).mean()
+    df["Spp_smooth"] = df["Spp"].rolling(window=3, center=True).mean()
+    df["Ss_smooth"]  = df["Ss"].rolling(window=3, center=True).mean()
+
+    # — overwrite the first two rows with the raw values —
+    #    use .iloc to target position 0 and 1
+    df.loc[df.index[:2], "Sp_smooth"]  = df.loc[df.index[:2], "Sp"]
+    df.loc[df.index[:2], "Spp_smooth"] = df.loc[df.index[:2], "Spp"]
+    df.loc[df.index[:2], "Ss_smooth"]  = df.loc[df.index[:2], "Ss"]
+
     return df, temp
+
 
 
 
@@ -384,6 +394,8 @@ with tab_graph:
         select_all = st.checkbox("Select All", value=True)
         to_plot = [name for name in sorted(processed)
                    if st.checkbox(re.sub(r'(?i)\.erp$', '', name), value=select_all, key=f"cb_{mode}_{name}")]
+
+
         if not to_plot:
             st.info("Select at least one file to plot.")
         else:
@@ -410,9 +422,25 @@ with tab_graph:
                     y = df['Gp_smooth']
                 else:  # Alpha
                     y = df['Alpha']
-                ax.plot(df[x_axis], y, color=color_map[name], linewidth=LINEWIDTH, label=lbl)
 
-            ax.set_title(f"RPA - Cure Test {temp_lb}°C/{time_lb}min - {metric} vs {x_axis}", fontsize=TITLE_FS)
+                ax.plot(df[x_axis], y, color=color_map[name], linewidth=LINEWIDTH, label=lbl)
+                
+
+            default_title = f"RPA - Cure Test {temp_lb}°C/{time_lb}min - {metric} vs {x_axis}"
+            col_title, col_grid = st.columns([1, 1], gap="large")
+            with col_title:
+                custom_title = st.text_input("Custom plot title (leave blank for default):", value=default_title, key="cure_custom_title")
+            with col_grid:
+                grid_choice = st.radio("Grid lines:", ["On", "Off"], horizontal=True)
+                show_grid = (grid_choice == "On")
+            plot_title   = custom_title if custom_title else default_title
+            ax.set_title(plot_title, fontsize=TITLE_FS)
+            if show_grid:
+                ax.grid(which="major", linestyle="-", linewidth=0.5)
+            else:
+                ax.grid(False)
+
+
             ax.set_xlabel(x_label, fontsize=LABEL_FS)
             ax.set_ylabel(metric if metric == "Alpha" else f"{metric} [dNm]", fontsize=LABEL_FS)
             ax.tick_params(axis="both", labelsize=TICK_FS)
@@ -422,7 +450,7 @@ with tab_graph:
 
             st.pyplot(fig, use_container_width=False)
             buf = io.BytesIO(); fig.savefig(buf, format="png", dpi=300); buf.seek(0)
-            st.download_button("Download plot as PNG", data=buf, file_name="rpa_plot.png", mime="image/png")
+            st.download_button("Download plot as PNG", data=buf, file_name="rpa_cure_plot.png", mime="image/png")
 
 
     elif mode == "Scorch Test":
@@ -459,14 +487,27 @@ with tab_graph:
                 else:                y = df['Alpha']
                 ax.plot(df[x_axis], y, color=color_map[name], linewidth=LINEWIDTH, label=lbl)
 
-            ax.set_title(f"RPA - Scorch Test {temp_lb}°C/{time_lb}min - {metric} vs {x_axis}", fontsize=TITLE_FS)
+            default_title = f"RPA - Scorch Test {temp_lb}°C/{time_lb}min - {metric} vs {x_axis}"
+            col_title, col_grid = st.columns([1, 1], gap="large")
+            with col_title:
+                custom_title = st.text_input("Custom plot title (leave blank for default):", value=default_title, key="cure_custom_title")
+            with col_grid:
+                grid_choice = st.radio("Grid lines:", ["On", "Off"], horizontal=True)
+                show_grid = (grid_choice == "On")
+            plot_title   = custom_title if custom_title else default_title
+            ax.set_title(plot_title, fontsize=TITLE_FS)
+            if show_grid:
+                ax.grid(which="major", linestyle="-", linewidth=0.5)
+            else:
+                ax.grid(False)
+
             ax.set_xlabel(x_label, fontsize=LABEL_FS); ax.set_ylabel(metric if metric=="Alpha" else f"{metric} [dNm]", fontsize=LABEL_FS)
             ax.tick_params(axis="both", labelsize=TICK_FS); ax.set_xlim(0); ax.set_ylim(0)
             leg = ax.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="lower right", frameon=True, edgecolor='black'); leg.get_frame().set_linewidth(0.5)
 
             st.pyplot(fig, use_container_width=False)
             buf = io.BytesIO(); fig.savefig(buf, format="png", dpi=300); buf.seek(0)
-            st.download_button("Download plot as PNG", data=buf, file_name="rpa_plot.png", mime="image/png")
+            st.download_button("Download plot as PNG", data=buf, file_name="rpa_scorch_plot.png", mime="image/png")
 
 
     elif mode == "Dynamic Test":
@@ -520,8 +561,22 @@ with tab_graph:
                         y = df["TanDelta_smooth"]
                     ax.plot(df[x_axis], y, color=color_map[name], linewidth=LINEWIDTH, label=lbl)
 
+
+            default_title = f"RPA - Strain Sweep {range_lb} at {temp_lb}°C - {metric} vs {x_axis}"
+            col_title, col_grid = st.columns([1, 1], gap="large")
+            with col_title:
+                custom_title = st.text_input("Custom plot title (leave blank for default):", value=default_title, key="cure_custom_title")
+            with col_grid:
+                grid_choice = st.radio("Grid lines:", ["On", "Off"], horizontal=True)
+                show_grid = (grid_choice == "On")
+            plot_title   = custom_title if custom_title else default_title
+            ax.set_title(plot_title, fontsize=TITLE_FS)
+            if show_grid:
+                ax.grid(which="major", linestyle="-", linewidth=0.5)
+            else:
+                ax.grid(False)
+
             ax.set_xscale("log"); ax.set_xticks([1,10,100]); ax.set_xticklabels([str(t) for t in [1,10,100]], fontsize=TICK_FS)
-            ax.set_title(f"RPA - Strain Sweep {range_lb} at {temp_lb}°C - {metric} vs {x_axis}", fontsize=TITLE_FS)
             ax.set_xlabel(x_label, fontsize=LABEL_FS); ax.set_ylabel(metric if metric=="TanDelta" else f"{metric} [dNm]", fontsize=LABEL_FS)
             ax.tick_params(axis="both", labelsize=TICK_FS)
             leg = ax.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="upper left", bbox_to_anchor=(1.02, 1), frameon=True, edgecolor='black')
@@ -529,7 +584,7 @@ with tab_graph:
 
             st.pyplot(fig, use_container_width=False)
             buf = io.BytesIO(); fig.savefig(buf, format="png", dpi=300); buf.seek(0)
-            st.download_button("Download plot as PNG", data=buf, file_name="rpa_plot.png", mime="image/png")
+            st.download_button("Download plot as PNG", data=buf, file_name="rpa_dynamic_plot.png", mime="image/png")
 
 
     elif mode == "IVE Test":
@@ -609,7 +664,21 @@ with tab_graph:
                     ax.ticklabel_format(style='plain', axis='y')
 
             # ——— Titles, labels, legend ———
-            ax.set_title(f"RPA - Frequency Sweep {temp_lb}°C - {metric} vs {x_label}", fontsize=TITLE_FS)
+            default_title = f"RPA - Frequency Sweep {temp_lb}°C - {metric} vs {x_label}"
+            col_title, col_grid = st.columns([1, 1], gap="large")
+            with col_title:
+                custom_title = st.text_input("Custom plot title (leave blank for default):", value=default_title, key="cure_custom_title")
+            with col_grid:
+                grid_choice = st.radio("Grid lines:", ["On", "Off"], horizontal=True)
+                show_grid = (grid_choice == "On")
+            plot_title   = custom_title if custom_title else default_title
+            ax.set_title(plot_title, fontsize=TITLE_FS)
+            if show_grid:
+                ax.grid(which="major", linestyle="-", linewidth=0.5)
+            else:
+                ax.grid(False)
+
+
             ax.set_xlabel(x_label, fontsize=LABEL_FS)
             ax.set_ylabel(f"{metric} [dNm]", fontsize=LABEL_FS)
             ax.tick_params(axis="both", labelsize=TICK_FS)
@@ -622,7 +691,7 @@ with tab_graph:
             buf = io.BytesIO()
             fig.savefig(buf, format="png", dpi=300)
             buf.seek(0)
-            st.download_button("Download plot as PNG", data=buf, file_name="rpa_plot.png", mime="image/png")
+            st.download_button("Download plot as PNG", data=buf, file_name="rpa_freqsweep_plot.png", mime="image/png")
 
 
     elif mode == "Temperature Sweep":
@@ -661,7 +730,19 @@ with tab_graph:
                         y = df["TanDelta_smooth"]
                     ax.plot(df[x_axis], y, color=color_map[name], linewidth=LINEWIDTH, label=lbl)
 
-            ax.set_title(f"Temp Sweep {temp_lb}°C - {metric} vs Temperature", fontsize=TITLE_FS)
+            default_title = f"Temp Sweep {temp_lb}°C - {metric} vs Temperature"
+            col_title, col_grid = st.columns([1, 1], gap="large")
+            with col_title:
+                custom_title = st.text_input("Custom plot title (leave blank for default):", value=default_title, key="cure_custom_title")
+            with col_grid:
+                grid_choice = st.radio("Grid lines:", ["On", "Off"], horizontal=True)
+                show_grid = (grid_choice == "On")
+            plot_title   = custom_title if custom_title else default_title
+            ax.set_title(plot_title, fontsize=TITLE_FS)
+            if show_grid:
+                ax.grid(which="major", linestyle="-", linewidth=0.5)
+            else:
+                ax.grid(False)
             ax.set_xlabel(x_label, fontsize=LABEL_FS); ax.set_ylabel(f"{metric} [dNm]", fontsize=LABEL_FS)
             ax.tick_params(axis="both", labelsize=TICK_FS)
             leg = ax.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="upper left", bbox_to_anchor=(1.02, 1), frameon=True, edgecolor='black')
@@ -669,7 +750,7 @@ with tab_graph:
 
             st.pyplot(fig, use_container_width=False)
             buf = io.BytesIO(); fig.savefig(buf, format="png", dpi=300); buf.seek(0)
-            st.download_button("Download plot as PNG", data=buf, file_name="rpa_plot.png", mime="image/png")
+            st.download_button("Download plot as PNG", data=buf, file_name="rpa_tempsweep_plot.png", mime="image/png")
 
 
     elif mode == "Plastequiv Test":
@@ -708,7 +789,21 @@ with tab_graph:
                 lbl = clean_name if legend_choice == "Filename" else nicknames[name]
                 ax.plot(df[x_axis], df["Sp_smooth"], color=color_map[name], linewidth=LINEWIDTH, label=lbl)
 
-            ax.set_title(f"RPA - Plastequiv Test {temp_lb}°C - Sp vs {x_axis}", fontsize=TITLE_FS)
+            default_title = f"RPA - Plastequiv Test {temp_lb}°C - Sp vs {x_axis}"
+            col_title, col_grid = st.columns([1, 1], gap="large")
+            with col_title:
+                custom_title = st.text_input("Custom plot title (leave blank for default):", value=default_title, key="cure_custom_title")
+            with col_grid:
+                grid_choice = st.radio("Grid lines:", ["On", "Off"], horizontal=True)
+                show_grid = (grid_choice == "On")
+            plot_title   = custom_title if custom_title else default_title
+            ax.set_title(plot_title, fontsize=TITLE_FS)
+            if show_grid:
+                ax.grid(which="major", linestyle="-", linewidth=0.5)
+            else:
+                ax.grid(False)
+
+
             ax.set_xlabel(x_label, fontsize=LABEL_FS)
             ax.set_ylabel("Sp [dNm]", fontsize=LABEL_FS)
             ax.tick_params(axis="both", labelsize=TICK_FS)
@@ -718,18 +813,13 @@ with tab_graph:
 
             st.pyplot(fig, use_container_width=False)
             buf = io.BytesIO(); fig.savefig(buf, format="png", dpi=300); buf.seek(0)
-            st.download_button("Download plot as PNG", data=buf,
-                            file_name="rpa_plot.png", mime="image/png")
+            st.download_button("Download plot as PNG", data=buf, file_name="rpa_plastequiv_plot.png", mime="image/png")
 
 
     elif mode == "Indus - Plastequiv Test":
         x_axis  = "Time"
         x_label = "Time [sec]"
 
-        # Legend choice only
-        col1, _ = st.columns([1, 1], gap="large")
-        with col1:
-            legend_choice = st.radio("Legend label:", ["Filename", "Nickname"], horizontal=True)
 
         # File pickers
         select_all = st.checkbox("Select All", value=True)
@@ -744,6 +834,11 @@ with tab_graph:
             color_map = {n: palette[i % len(palette)] for i, n in enumerate(sorted(processed))}
             nicknames = {n: f"Mix{i+1}" for i, n in enumerate(sorted(processed))}
 
+            col_grid, _ = st.columns([1, 1], gap="large")
+            with col_grid:
+                grid_choice = st.radio("Grid lines:", ["On", "Off"], horizontal=True)
+                show_grid = (grid_choice == "On")
+            
             # Two‐panel: Ss on left, Sp & Spp on right
             colL, colR = st.columns(2, gap="large")
 
@@ -753,15 +848,29 @@ with tab_graph:
                 for name in to_plot:
                     df, _ = processed[name]
                     clean_name = re.sub(r'(?i)\.erp$', '', name)
-                    lbl = clean_name if legend_choice == "Filename" else nicknames[name]
-                    ax1.plot(df[x_axis], df["Ss"], color=color_map[name], linewidth=LINEWIDTH, label=lbl)
-                ax1.set_title(f"Plastequiv Test - Ss vs Time", fontsize=TITLE_FS)
+                    lbl = clean_name
+                    ax1.plot(df[x_axis], df["Ss_smooth"], color=color_map[name], linewidth=LINEWIDTH, label=lbl)
+
+                default_title1 = "Plastequiv Test - Ss vs Time"
+                custom_title1 = st.text_input("Custom plot title (leave blank for default):", value=default_title1, key="cure_custom_title")
+                plot_title1   = custom_title1 if custom_title1 else default_title1
+                ax1.set_title(plot_title1, fontsize=TITLE_FS)
+
                 ax1.set_xlabel(x_label, fontsize=LABEL_FS)
                 ax1.set_ylabel("Ss [dNm]", fontsize=LABEL_FS)
                 ax1.tick_params(axis="both", labelsize=TICK_FS)
+                ax1.set_xlim(left=0)
+
+                if show_grid:
+                    ax1.grid(which="major", linestyle="-", linewidth=0.5)
+                else:
+                    ax1.grid(False)
+
                 leg1 = ax1.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS)
                 leg1.get_frame().set_linewidth(0.5)
                 st.pyplot(fig1, use_container_width=True)
+                buf1 = io.BytesIO(); fig1.savefig(buf1, format="png", dpi=300); buf1.seek(0)
+                st.download_button("Download plot as PNG", data=buf1, file_name="rpa_plastequivSs_plot.png", mime="image/png")
 
             with colR:
                 fig2, ax2 = plt.subplots(figsize=(3.5, 3.5), constrained_layout=True)
@@ -769,17 +878,28 @@ with tab_graph:
                 for name in to_plot:
                     df, _ = processed[name]
                     clean_name = re.sub(r'(?i)\.erp$', '', name)
-                    lbl = clean_name if legend_choice == "Filename" else nicknames[name]
-                    ax2.plot(df[x_axis], df["Sp"], color=color_map[name], linewidth=LINEWIDTH, label=f"{lbl} Sp")
-                    ax2.plot(df[x_axis], df["Spp"], color=color_map[name], linewidth=LINEWIDTH,
-                            linestyle="--", label=f"{lbl} Spp")
-                ax2.set_title("Plastequiv Test - Sp & Spp vs Time", fontsize=TITLE_FS)
+                    lbl = clean_name
+                    ax2.plot(df[x_axis], df["Sp_smooth"], color=color_map[name], linewidth=LINEWIDTH, label=f"{lbl} Sp")
+                    ax2.plot(df[x_axis], df["Spp_smooth"], color=color_map[name], linewidth=LINEWIDTH, linestyle="--", label=f"{lbl} Spp")
+
+                default_title2 = "Plastequiv Test - Sp & Spp vs Time"
+                custom_title2 = st.text_input("Custom plot title (leave blank for default):", value=default_title2, key="cure_custom_title1")
+                plot_title2   = custom_title2 if custom_title2 else default_title2
+                ax2.set_title(plot_title2, fontsize=TITLE_FS)
+                ax2.set_xlim(left=0)
+ 
                 ax2.set_xlabel(x_label, fontsize=LABEL_FS)
                 ax2.set_ylabel("Sp & Spp [dNm]", fontsize=LABEL_FS)
                 ax2.tick_params(axis="both", labelsize=TICK_FS)
+                if show_grid:
+                    ax2.grid(which="major", linestyle="-", linewidth=0.5)
+                else:
+                    ax2.grid(False)
                 leg2 = ax2.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS)
                 leg2.get_frame().set_linewidth(0.5)
                 st.pyplot(fig2, use_container_width=True)
+                buf2 = io.BytesIO(); fig2.savefig(buf2, format="png", dpi=300); buf2.seek(0)
+                st.download_button("Download plot as PNG", data=buf2, file_name="rpa_plastequivSpSpp_plot.png", mime="image/png")
 
 
 
@@ -1114,5 +1234,5 @@ with tab_data:
             st.dataframe(df_display, use_container_width=True)
         
         elif mode == "Indus - Plastequiv Test":
-            df_display = df.iloc[:, :26].copy()
+            df_display = df.iloc[:, :22].copy()
             st.dataframe(df_display, use_container_width=True)
