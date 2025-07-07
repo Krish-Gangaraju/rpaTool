@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
-from matplotlib.ticker import LogLocator, LogFormatter, FuncFormatter
+from matplotlib.ticker import LogLocator, LogFormatter, FuncFormatter, ScalarFormatter, LogFormatterMathtext
 from io import StringIO
 import streamlit as st
 import io
@@ -418,10 +418,13 @@ with tab_graph:
                 lbl = clean_name if legend_choice == "Filename" else nicknames[name]
                 if metric == "Sp":
                     y = df['Sp_smooth']
+                    unit = "[dNm]"
                 elif metric == "Gp":
                     y = df['Gp_smooth']
+                    unit = "[kPa]"
                 else:  # Alpha
                     y = df['Alpha']
+                    unit = ""
 
                 ax.plot(df[x_axis], y, color=color_map[name], linewidth=LINEWIDTH, label=lbl)
                 
@@ -429,7 +432,7 @@ with tab_graph:
             default_title = f"RPA - Cure Test {temp_lb}°C/{time_lb}min - {metric} vs {x_axis}"
             col_title, col_grid = st.columns([1, 1], gap="large")
             with col_title:
-                custom_title = st.text_input("Custom plot title (leave blank for default):", value=default_title, key="cure_custom_title")
+                custom_title = st.text_input("**Custom plot title (leave blank for default):**", value=default_title, key="cure_custom_title")
             with col_grid:
                 grid_choice = st.radio("Grid lines:", ["On", "Off"], horizontal=True)
                 show_grid = (grid_choice == "On")
@@ -442,7 +445,7 @@ with tab_graph:
 
 
             ax.set_xlabel(x_label, fontsize=LABEL_FS)
-            ax.set_ylabel(metric if metric == "Alpha" else f"{metric} [dNm]", fontsize=LABEL_FS)
+            ax.set_ylabel(f"{metric} {unit}", fontsize=LABEL_FS)
             ax.tick_params(axis="both", labelsize=TICK_FS)
             ax.set_xlim(left=0); ax.set_ylim(bottom=0)
             leg = ax.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="lower right", frameon=True, edgecolor='black')
@@ -482,15 +485,21 @@ with tab_graph:
                 df, _ = processed[name]
                 clean_name = re.sub(r'(?i)\.erp$', '', name)
                 lbl = clean_name if legend_choice == "Filename" else nicknames[name]
-                if metric == "Sp": y = df['Sp_smooth']
-                elif metric == "Gp": y = df['Gp_smooth']
-                else:                y = df['Alpha']
+                if metric == "Sp": 
+                    y = df['Sp_smooth']
+                    unit = "[dNm]"
+                elif metric == "Gp": 
+                    y = df['Gp_smooth']
+                    unit = "[MPa]"
+                else:                
+                    y = df['Alpha']
+                    unit = ""
                 ax.plot(df[x_axis], y, color=color_map[name], linewidth=LINEWIDTH, label=lbl)
 
             default_title = f"RPA - Scorch Test {temp_lb}°C/{time_lb}min - {metric} vs {x_axis}"
             col_title, col_grid = st.columns([1, 1], gap="large")
             with col_title:
-                custom_title = st.text_input("Custom plot title (leave blank for default):", value=default_title, key="cure_custom_title")
+                custom_title = st.text_input("**Custom plot title (leave blank for default):**", value=default_title, key="cure_custom_title")
             with col_grid:
                 grid_choice = st.radio("Grid lines:", ["On", "Off"], horizontal=True)
                 show_grid = (grid_choice == "On")
@@ -501,7 +510,7 @@ with tab_graph:
             else:
                 ax.grid(False)
 
-            ax.set_xlabel(x_label, fontsize=LABEL_FS); ax.set_ylabel(metric if metric=="Alpha" else f"{metric} [dNm]", fontsize=LABEL_FS)
+            ax.set_xlabel(x_label, fontsize=LABEL_FS);  ax.set_ylabel(f"{metric} {unit}", fontsize=LABEL_FS)
             ax.tick_params(axis="both", labelsize=TICK_FS); ax.set_xlim(0); ax.set_ylim(0)
             leg = ax.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="lower right", frameon=True, edgecolor='black'); leg.get_frame().set_linewidth(0.5)
 
@@ -554,18 +563,24 @@ with tab_graph:
                 if metric == "Gp & Gpp":
                     ax.plot(df[x_axis], df['Gp_smooth'],  color=color_map[name], linewidth=LINEWIDTH, label=f"{lbl} Gp")
                     ax.plot(df[x_axis], df['Gpp_smooth'], color=color_map[name], linewidth=LINEWIDTH, linestyle="--", label=f"{lbl} Gpp")
+                    unit = "[MPa]"
                 else:
-                    if metric in ("Sp", "Gp", "Gpp", "Np", "Npp", "Ns"):
+                    if metric in ("Gp", "Gpp"):
                         y = df[f"{metric}_smooth"]
+                        unit = "[MPa]"
+                    elif metric in ("Np", "Npp", "Ns"):
+                        y = df[f"{metric}_smooth"]
+                        unit = "[Pa·s]"
                     else:
                         y = df["TanDelta_smooth"]
+                        unit = ""
                     ax.plot(df[x_axis], y, color=color_map[name], linewidth=LINEWIDTH, label=lbl)
 
 
             default_title = f"RPA - Strain Sweep {range_lb} at {temp_lb}°C - {metric} vs {x_axis}"
             col_title, col_grid = st.columns([1, 1], gap="large")
             with col_title:
-                custom_title = st.text_input("Custom plot title (leave blank for default):", value=default_title, key="cure_custom_title")
+                custom_title = st.text_input("**Custom plot title (leave blank for default):**", value=default_title, key="cure_custom_title")
             with col_grid:
                 grid_choice = st.radio("Grid lines:", ["On", "Off"], horizontal=True)
                 show_grid = (grid_choice == "On")
@@ -577,7 +592,7 @@ with tab_graph:
                 ax.grid(False)
 
             ax.set_xscale("log"); ax.set_xticks([1,10,100]); ax.set_xticklabels([str(t) for t in [1,10,100]], fontsize=TICK_FS)
-            ax.set_xlabel(x_label, fontsize=LABEL_FS); ax.set_ylabel(metric if metric=="TanDelta" else f"{metric} [dNm]", fontsize=LABEL_FS)
+            ax.set_xlabel(x_label, fontsize=LABEL_FS); ax.set_ylabel(f"{metric} {unit}", fontsize=LABEL_FS)
             ax.tick_params(axis="both", labelsize=TICK_FS)
             leg = ax.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="upper left", bbox_to_anchor=(1.02, 1), frameon=True, edgecolor='black')
             leg.get_frame().set_linewidth(0.5)
@@ -588,25 +603,25 @@ with tab_graph:
 
 
     elif mode == "IVE Test":
-        # ——— Controls ———
-        x_axis  = "Freq"
-        opts      = ["Gp & Gpp", "Gp", "Gpp", "Np", "Npp", "Ns", "TanDelta"]
+        x_axis = "Freq"
+        opts   = ["Gp & Gpp", "Gp", "Gpp", "Np", "Npp", "Ns", "TanDelta"]
+
+        # — Controls —
         col1, col2 = st.columns([1, 1], gap="large")
         with col1:
             metric = st.radio("Y-Axis", opts, horizontal=True)
         with col2:
             axis_type = st.radio("X-Axis:", ["Frequency", "Angular"], horizontal=True)
 
-        # ——— File selection ———
+        # — File selection —
         select_all = st.checkbox("Select All", value=True)
         to_plot = [
             name for name in sorted(processed)
-            if st.checkbox(re.sub(r'(?i)\.erp$', '', name), value=select_all, key=f"cb_{mode}_{name}")
-        ]
+            if st.checkbox(re.sub(r'(?i)\.erp$', '', name), value=select_all, key=f"cb_{mode}_{name}")]
         if not to_plot:
             st.info("Select at least one file to plot.")
         else:
-            # ——— Prep colors & nicknames ———
+            # — Prep colors & nicknames —
             palette   = plt.get_cmap('tab20').colors
             names     = sorted(processed.keys())
             color_map = {n: palette[i % len(palette)] for i, n in enumerate(names)}
@@ -614,79 +629,90 @@ with tab_graph:
             temp      = next(iter(processed.values()))[1]
             temp_lb   = f"{temp:.0f}"
 
-            # ——— Figure setup ———
+            # — Figure setup —
             fig, ax = plt.subplots(figsize=(4.7, 4.7), constrained_layout=True)
             ax.set_box_aspect(1)
             ax.set_xscale("log")
 
-            # decide x values & label
+            # — X-axis setup —
+            base_ticks = [0.001, 0.01, 0.1, 1, 10, 100]
             if axis_type == "Frequency":
-                x_vals = df[x_axis]  # df["Freq"]
-                x_label = "Frequency [Hz]"
-                x_ticks = [0.001, 0.01, 0.1, 1, 10, 100]
+                get_x    = lambda df: df[x_axis]
+                x_label  = "Frequency [Hz]"
+                x_ticks  = base_ticks
+                x_fmt    = [str(t) for t in base_ticks]
             else:
-                # angular ω = 2π·f
-                x_vals = 2 * np.pi * df[x_axis]
-                x_label = "Angular Frequency [rad/s]"
-                x_ticks = [2*np.pi*t for t in [0.001, 0.01, 0.1, 1, 10, 100]]
+                get_x    = lambda df: 2*np.pi * df[x_axis]
+                x_label  = "Angular Frequency [rad/s]"
+                x_ticks  = [2*np.pi * t for t in base_ticks]
+                x_fmt    = [f"{(2*np.pi*t):.3g}" for t in base_ticks]
 
             ax.set_xlim(min(x_ticks), max(x_ticks))
             ax.set_xticks(x_ticks)
-            ax.set_xticklabels([f"{t:.3g}" for t in x_ticks], fontsize=TICK_FS)
+            ax.set_xticklabels(x_fmt, fontsize=TICK_FS)
+
+            # — Y-axis setup (before plotting) —
+            if metric in ("Gp & Gpp", "Gp", "Gpp"):
+                ax.set_yscale("log")
+                ax.set_ylim(0.001, 1)
+                ax.set_yticks([0.001, 0.01, 0.1, 1])
+                ax.set_yticklabels([str(t) for t in [0.001, 0.01, 0.1, 1]], fontsize=TICK_FS)
+                unit = "[MPa]"
+
+            elif metric in ("Np", "Npp", "Ns"):
+                ax.set_yscale("log", base=2)
+                ax.margins(y=0.03)
+                ax.yaxis.set_major_locator(LogLocator(base=2, subs=[1]))
+                ax.yaxis.set_major_formatter(LogFormatterMathtext(base=2))
+                unit = "[Pa·s]"
+
+            else: # TanDelta
+                ax.set_yscale("linear")
+                ax.margins(y=0.03)
+                ax.ticklabel_format(style='plain', axis='y')
+                unit = ""
+
+            # — Gridlines —
             ax.grid(which="major", linestyle="-", linewidth=0.5)
 
-            # ——— Plot each mix ———
+            # — Plot each mix —
             for name in to_plot:
-                df, _ = processed[name]
+                df, _      = processed[name]
                 clean_name = re.sub(r'(?i)\.erp$', '', name)
-                lbl = clean_name  # always show cleaned filename for legend
+                lbl        = clean_name
 
+                xvals = get_x(df)
                 if metric == "Gp & Gpp":
-                    ax.plot(2*np.pi*df[x_axis] if axis_type=="Angular" else df[x_axis],
-                            df["Gp"],  color=color_map[name], linewidth=LINEWIDTH, label=f"{lbl} Gp")
-                    ax.plot(2*np.pi*df[x_axis] if axis_type=="Angular" else df[x_axis],
-                            df["Gpp"], color=color_map[name], linewidth=LINEWIDTH,
-                            linestyle="--", label=f"{lbl} Gpp")
-
+                    ax.plot(xvals, df["Gp"],  color=color_map[name], linewidth=LINEWIDTH, label=f"{lbl} Gp")
+                    ax.plot(xvals, df["Gpp"], color=color_map[name], linewidth=LINEWIDTH, linestyle="--", label=f"{lbl} Gpp")
                 else:
-                    ax.plot(2*np.pi*df[x_axis] if axis_type=="Angular" else df[x_axis],
-                            df[metric], color=color_map[name], linewidth=LINEWIDTH, label=lbl)
+                    ycol = metric if metric != "TanDelta" else "TanDelta"
+                    ax.plot(xvals, df[ycol], color=color_map[name], linewidth=LINEWIDTH, label=lbl)
 
-                # per-metric y settings
-                if metric in ("Gp & Gpp", "Gp", "Gpp"):
-                    ax.set_yscale("log")
-                    ax.set_ylim(0.001, 1)
-                    ax.set_yticks([0.001, 0.01, 0.1, 1])
-                    ax.set_yticklabels([str(t) for t in [0.001, 0.01, 0.1, 1]], fontsize=TICK_FS)
-                else:
-                    ax.set_yscale("linear")
-                    ax.margins(y=0.03)
-                    ax.ticklabel_format(style='plain', axis='y')
-
-            # ——— Titles, labels, legend ———
+            # — Custom title & grid toggle —
             default_title = f"RPA - Frequency Sweep {temp_lb}°C - {metric} vs {x_label}"
-            col_title, col_grid = st.columns([1, 1], gap="large")
+            col_title, col_grid = st.columns([2,1], gap="large")
             with col_title:
-                custom_title = st.text_input("Custom plot title (leave blank for default):", value=default_title, key="cure_custom_title")
+                custom_title = st.text_input("Custom plot title (leave blank for default):", value=default_title,key="ive_custom_title")
             with col_grid:
                 grid_choice = st.radio("Grid lines:", ["On", "Off"], horizontal=True)
-                show_grid = (grid_choice == "On")
-            plot_title   = custom_title if custom_title else default_title
+                if grid_choice == "On":
+                    ax.grid(True)
+                else:
+                    ax.grid(False)
+
+            plot_title = custom_title or default_title
             ax.set_title(plot_title, fontsize=TITLE_FS)
-            if show_grid:
-                ax.grid(which="major", linestyle="-", linewidth=0.5)
-            else:
-                ax.grid(False)
 
-
+            # — Axis labels & legend —
             ax.set_xlabel(x_label, fontsize=LABEL_FS)
-            ax.set_ylabel(f"{metric} [dNm]", fontsize=LABEL_FS)
+            ax.set_ylabel(f"{metric} {unit}", fontsize=LABEL_FS)
             ax.tick_params(axis="both", labelsize=TICK_FS)
 
             leg = ax.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="upper left", bbox_to_anchor=(1.02, 1), frameon=True, edgecolor='black')
             leg.get_frame().set_linewidth(0.5)
 
-            # ——— Render + download ———
+            # — Render + download —
             st.pyplot(fig, use_container_width=False)
             buf = io.BytesIO()
             fig.savefig(buf, format="png", dpi=300)
@@ -694,10 +720,11 @@ with tab_graph:
             st.download_button("Download plot as PNG", data=buf, file_name="rpa_freqsweep_plot.png", mime="image/png")
 
 
+
     elif mode == "Temperature Sweep":
         opts    = ["TanDelta", "Gp & Gpp", "Gp", "Gpp", "Np", "Npp", "Ns"]
         x_axis  = "UTemp"
-        x_label = "Temp [C]"
+        x_label = "Temperature [°C]"
         col1, col2 = st.columns([1, 1], gap="large")
         with col1:
             metric = st.radio("Metric", opts, horizontal=True)
@@ -723,27 +750,39 @@ with tab_graph:
                 if metric == "Gp & Gpp":
                     ax.plot(df[x_axis], df['Gp'],  color=color_map[name], linewidth=LINEWIDTH, label=f"{lbl} Gp")
                     ax.plot(df[x_axis], df['Gpp'], color=color_map[name], linewidth=LINEWIDTH, linestyle="--", label=f"{lbl} Gpp")
+                    unit = "[MPa]"
                 else:
-                    if metric in ("Sp", "Gp", "Gpp", "Np", "Npp", "Ns"):
+                    if metric in ("Gp", "Gpp"):
                         y = df[f"{metric}"]
+                        unit = "[MPa]"
+                    elif metric in ("Sp"):
+                        y = df[f"{metric}"]
+                        unit = "[dNm]"
+                    elif metric in ("Np", "Npp", "Ns"):
+                        y = df[f"{metric}"]
+                        unit = "[Pa·s]"
                     else:
                         y = df["TanDelta_smooth"]
+                        unit = ""
                     ax.plot(df[x_axis], y, color=color_map[name], linewidth=LINEWIDTH, label=lbl)
 
             default_title = f"Temp Sweep {temp_lb}°C - {metric} vs Temperature"
             col_title, col_grid = st.columns([1, 1], gap="large")
             with col_title:
-                custom_title = st.text_input("Custom plot title (leave blank for default):", value=default_title, key="cure_custom_title")
+                custom_title = st.text_input("**Custom plot title (leave blank for default):**", value=default_title, key="cure_custom_title")
             with col_grid:
                 grid_choice = st.radio("Grid lines:", ["On", "Off"], horizontal=True)
                 show_grid = (grid_choice == "On")
             plot_title   = custom_title if custom_title else default_title
             ax.set_title(plot_title, fontsize=TITLE_FS)
+
+            
             if show_grid:
                 ax.grid(which="major", linestyle="-", linewidth=0.5)
             else:
                 ax.grid(False)
-            ax.set_xlabel(x_label, fontsize=LABEL_FS); ax.set_ylabel(f"{metric} [dNm]", fontsize=LABEL_FS)
+
+            ax.set_xlabel(x_label, fontsize=LABEL_FS); ax.set_ylabel(f"{metric} {unit}", fontsize=LABEL_FS)
             ax.tick_params(axis="both", labelsize=TICK_FS)
             leg = ax.legend(title="Mixes", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="upper left", bbox_to_anchor=(1.02, 1), frameon=True, edgecolor='black')
             leg.get_frame().set_linewidth(0.5)
@@ -754,16 +793,9 @@ with tab_graph:
 
 
     elif mode == "Plastequiv Test":
-        opts    = ["Sp"]
+        metric = "Sp"  
         x_axis  = "Time"
         x_label = "Time [sec]"
-
-        # Controls
-        col1, col2 = st.columns([1, 1], gap="large")
-        with col1:
-            metric = st.radio("Metric", opts, horizontal=True)
-        with col2:
-            legend_choice = st.radio("Legend label:", ["Filename", "Nickname"], horizontal=True)
 
         # File pickers
         select_all = st.checkbox("Select All", value=True)
@@ -786,13 +818,13 @@ with tab_graph:
             for name in to_plot:
                 df, _ = processed[name]
                 clean_name = re.sub(r'(?i)\.erp$', '', name)
-                lbl = clean_name if legend_choice == "Filename" else nicknames[name]
+                lbl = clean_name
                 ax.plot(df[x_axis], df["Sp_smooth"], color=color_map[name], linewidth=LINEWIDTH, label=lbl)
 
             default_title = f"RPA - Plastequiv Test {temp_lb}°C - Sp vs {x_axis}"
             col_title, col_grid = st.columns([1, 1], gap="large")
             with col_title:
-                custom_title = st.text_input("Custom plot title (leave blank for default):", value=default_title, key="cure_custom_title")
+                custom_title = st.text_input("**Custom plot title (leave blank for default):**", value=default_title, key="cure_custom_title")
             with col_grid:
                 grid_choice = st.radio("Grid lines:", ["On", "Off"], horizontal=True)
                 show_grid = (grid_choice == "On")
@@ -802,7 +834,6 @@ with tab_graph:
                 ax.grid(which="major", linestyle="-", linewidth=0.5)
             else:
                 ax.grid(False)
-
 
             ax.set_xlabel(x_label, fontsize=LABEL_FS)
             ax.set_ylabel("Sp [dNm]", fontsize=LABEL_FS)
@@ -852,7 +883,7 @@ with tab_graph:
                     ax1.plot(df[x_axis], df["Ss_smooth"], color=color_map[name], linewidth=LINEWIDTH, label=lbl)
 
                 default_title1 = "Plastequiv Test - Ss vs Time"
-                custom_title1 = st.text_input("Custom plot title (leave blank for default):", value=default_title1, key="cure_custom_title")
+                custom_title1 = st.text_input("**Custom plot title (leave blank for default):**", value=default_title1, key="cure_custom_title1")
                 plot_title1   = custom_title1 if custom_title1 else default_title1
                 ax1.set_title(plot_title1, fontsize=TITLE_FS)
 
@@ -883,7 +914,7 @@ with tab_graph:
                     ax2.plot(df[x_axis], df["Spp_smooth"], color=color_map[name], linewidth=LINEWIDTH, linestyle="--", label=f"{lbl} Spp")
 
                 default_title2 = "Plastequiv Test - Sp & Spp vs Time"
-                custom_title2 = st.text_input("Custom plot title (leave blank for default):", value=default_title2, key="cure_custom_title1")
+                custom_title2 = st.text_input("**Custom plot title (leave blank for default):**", value=default_title2, key="cure_custom_title2")
                 plot_title2   = custom_title2 if custom_title2 else default_title2
                 ax2.set_title(plot_title2, fontsize=TITLE_FS)
                 ax2.set_xlim(left=0)
@@ -900,8 +931,6 @@ with tab_graph:
                 st.pyplot(fig2, use_container_width=True)
                 buf2 = io.BytesIO(); fig2.savefig(buf2, format="png", dpi=300); buf2.seek(0)
                 st.download_button("Download plot as PNG", data=buf2, file_name="rpa_plastequivSpSpp_plot.png", mime="image/png")
-
-
 
 
 
@@ -1176,6 +1205,7 @@ with tab_key:
                 "Mix":                  name,
                 "Ss Maximum":           ss_max,
                 "Ss Final Value":       ss_final,
+                "Overshoot":            ss_max / ss_final,
                 "Sp Maximum":           sp_max,
                 "Sp Final Value":       sp_final,
                 "Time at Sp=Spp (min)": t_cross
