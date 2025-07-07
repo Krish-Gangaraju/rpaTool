@@ -101,7 +101,7 @@ Below is a breakdown of each test mode, including what is plotted in the Graph I
 
 - **Plots**:
   - **Metrics**: G′ & G″, G′, G″, η′, η″, η<sub>s</sub>, TanDelta.
-  - **X-axis Options**: Frequency [Hz] or Angular Frequency [rad/s] (log scale).
+  - **X-axis Options**: Frequency [Hz] or Angular Velocity [rad/s] (log scale).
   - **Y-axis Scale**: Linear or log depending on metric.
 
 - **Key Values**:
