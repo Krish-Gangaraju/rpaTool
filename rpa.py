@@ -639,13 +639,13 @@ with tab_graph:
             if axis_type == "Frequency":
                 get_x    = lambda df: df[x_axis]
                 x_label  = "Frequency [Hz]"
-                x_ticks  = base_ticks
-                x_fmt    = [str(t) for t in base_ticks]
+                x_ticks  = [0.001, 0.01, 0.1, 1, 10, 100]
+                x_fmt    = [str(t) for t in x_ticks]
             else:
                 get_x    = lambda df: 2*np.pi * df[x_axis]
-                x_label  = "Angular Frequency [rad/s]"
-                x_ticks  = [2*np.pi * t for t in base_ticks]
-                x_fmt    = [f"{(2*np.pi*t):.3g}" for t in base_ticks]
+                x_label  = "Angular Velocity [rad/s]"
+                x_ticks  = [0.01, 0.1, 1, 10, 100, 1000]
+                x_fmt    = [str(t) for t in x_ticks]
 
             ax.set_xlim(min(x_ticks), max(x_ticks))
             ax.set_xticks(x_ticks)
@@ -690,7 +690,7 @@ with tab_graph:
                     ax.plot(xvals, df[ycol], color=color_map[name], linewidth=LINEWIDTH, label=lbl)
 
             # — Custom title & grid toggle —
-            default_title = f"RPA - Frequency Sweep {temp_lb}°C - {metric} vs {x_label}"
+            default_title = f"RPA - Frequency Sweep {temp_lb}°C - {metric} vs {axis_type}"
             col_title, col_grid = st.columns([2,1], gap="large")
             with col_title:
                 custom_title = st.text_input("Custom plot title (leave blank for default):", value=default_title,key="ive_custom_title")
