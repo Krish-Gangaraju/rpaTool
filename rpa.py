@@ -720,7 +720,6 @@ with tab_graph:
             st.download_button("Download plot as PNG", data=buf, file_name="rpa_freqsweep_plot.png", mime="image/png")
 
 
-
     elif mode == "Temperature Sweep":
         opts    = ["TanDelta", "Gp & Gpp", "Gp", "Gpp", "Np", "Npp", "Ns"]
         x_axis  = "UTemp"
