@@ -156,6 +156,33 @@ def _load_raw_df_plastequiv(buffer, col_names):
 
 
 
+# ——— Stress Decay low-level loader ———
+def _load_raw_df_stressdecay(buffer, col_names):
+    raw = buffer.readlines() if hasattr(buffer, "readlines") else open(buffer, 'rb').readlines()
+    lines = [
+        L.decode('utf-8', errors='replace') if isinstance(L, (bytes, bytearray)) else L
+        for L in raw
+    ]
+    search_header = ("Time,Torque,Strain,Modulus")
+    idx = next((i for i,L in enumerate(lines) if L.strip() == search_header), None)
+    if idx is None:
+        raise ValueError("Header not found in file.")
+    # extract data lines starting 1 row after header
+    data_lines = lines[idx+2:]
+    # find first all‐blank row
+    end = next(
+        (i for i, line in enumerate(data_lines)
+         if all(not p.strip() for p in line.split(','))),
+        len(data_lines)
+    )
+    data_str = "".join(data_lines[:end])
+
+    temp = _read_test_temp(lines, search_header)
+    return pd.read_csv(StringIO(data_str), names=col_names), temp
+
+
+
+
 
 
 # ——— 1) Cure-test cleaner ———
@@ -298,11 +325,36 @@ def clean_plastequiv_file(buffer):
 
 
 
+# ——— 6) Stress Decay cleaner ———
+@st.cache_data
+def clean_stressdecay_file(buffer):
+    col_names = ["Time", "Torque", "Strain", "Modulus"]
+    df, temp = _load_raw_df_stressdecay(buffer, col_names)
+
+    # — convert to numeric —
+    df["Time"] = pd.to_numeric(df["Time"], errors="coerce")
+    df["Torque"] = pd.to_numeric(df["Torque"],     errors="coerce")
+    df["Strain"] = pd.to_numeric(df["Strain"],    errors="coerce")
+    df["Modulus"] = pd.to_numeric(df["Modulus"],     errors="coerce")
+
+    # — 3‐point centered rolling for each —
+    df["Torque_smooth"]  = df["Torque"].rolling(window=3, center=True).mean()
+    df["Modulus_smooth"] = df["Modulus"].rolling(window=3, center=True).mean()
+
+    # — overwrite the first two rows with the raw values —
+    #    use .iloc to target position 0 and 1
+    df.loc[df.index[:2], "Torque_smooth"]  = df.loc[df.index[:2], "Torque"]
+    df.loc[df.index[:2], "Modulus_smooth"] = df.loc[df.index[:2], "Modulus"]
+
+    return df, temp
+
+
+
 
 
 # ——— UI ———
 st.title("RPA Post-Processing Tool")
-modes = ["Cure Test", "Scorch Test", "Dynamic Test", "IVE Test", "Temperature Sweep", "Plastequiv Test", "Indus - Plastequiv Test"]
+modes = ["Cure Test", "Scorch Test", "Dynamic Test", "IVE Test", "Temperature Sweep", "Plastequiv Test", "Indus - Plastequiv Test", "Indus - Stress Decay"]
 display_names = {
     "Dynamic Test": "Dynamic Test/Strain Sweep",
     "IVE Test": "Frequency Sweep (includes IVE Test)",
@@ -317,7 +369,8 @@ key_map = {
     "IVE Test": "uploader_ive",
     "Plastequiv Test":  "uploader_plastequiv",
     "Indus - Plastequiv Test": "uploader_indus_plastequiv",
-    "Temperature Sweep": "uploader_temp_sweep"
+    "Temperature Sweep": "uploader_temp_sweep",
+    "Indus - Stress Decay": "uploader_indus_stress_decay"
 }
 
 labels = {
@@ -327,7 +380,8 @@ labels = {
     "IVE Test": "Upload IVE-test .erp files",
     "Plastequiv Test":     "Upload Plastequiv-test .erp files",
     "Indus - Plastequiv Test": "Upload Plastequiv-test .erp files",
-    "Temperature Sweep":  "Upload Temperature Sweep .erp files"
+    "Temperature Sweep":  "Upload Temperature Sweep .erp files",
+    "Indus - Stress Decay": "Upload Indus Stress Decay .erp files"
 }
 
 uploaded = st.file_uploader(labels[mode], type=['erp'], accept_multiple_files=True, key=key_map[mode])
@@ -351,7 +405,9 @@ for f in uploaded:
         elif mode == "Plastequiv Test" or mode == "Indus - Plastequiv Test":
             df, temp = clean_plastequiv_file(f)
         elif mode == "Temperature Sweep":
-            df, temp = clean_dynamic_file(f)  # assuming same format as Dynamic Test
+            df, temp = clean_dynamic_file(f)
+        elif mode == "Indus - Stress Decay":
+            df, temp = clean_stressdecay_file(f)
         processed[f.name] = (df, temp)
     except Exception as e:
         st.error(f"⚠️ Failed **{f.name}**: {e}")
@@ -932,6 +988,77 @@ with tab_graph:
                 st.download_button("Download plot as PNG", data=buf2, file_name="rpa_plastequivSpSpp_plot.png", mime="image/png")
 
 
+    elif mode == "Indus - Stress Decay":
+
+        # File selection (same style as Cure Test)
+        select_all = st.checkbox("Select All", value=True)
+        to_plot = [
+            name for name in sorted(processed)
+            if st.checkbox(re.sub(r'(?i)\.txt$|\.erp$|\.csv$', '', name), value=select_all, key=f"cb_{mode}_{name}")
+        ]
+        if not to_plot:
+            st.info("Select at least one file to plot.")
+            st.stop()
+
+        # prepare a consistent color map
+        palette   = plt.get_cmap("tab20").colors
+        color_map = {n: palette[i % len(palette)] for i, n in enumerate(sorted(processed))}
+
+        col1, col2 = st.columns([1, 1], gap="large")
+
+        # —— LEFT PANEL: Time vs Torque (log–log) ——
+        with col1:
+            from matplotlib.ticker import ScalarFormatter
+
+            fig, ax = plt.subplots(figsize=(3.5, 3.5), constrained_layout=True)
+            ax.set_box_aspect(1)
+
+            for name in to_plot:
+                df, _ = processed[name]
+                label = re.sub(r'(?i)\.txt$|\.erp$|\.csv$', '', name)
+                ax.plot(df["Time"], df["Torque_smooth"], color=color_map[name], linewidth=LINEWIDTH, label=label)
+
+            ax.set_xscale("log"); ax.set_yscale("log")
+
+            fmt = ScalarFormatter(); fmt.set_scientific(False); fmt.set_useOffset(False)
+            ax.xaxis.set_major_formatter(fmt); ax.yaxis.set_major_formatter(fmt)
+
+            ax.set_title("Time vs Torque", fontsize=TITLE_FS)
+            ax.set_xlabel("Time [min]", fontsize=LABEL_FS)
+            ax.set_ylabel("Torque", fontsize=LABEL_FS)
+            ax.tick_params(axis="both", labelsize=TICK_FS)
+            ax.grid(which="major", linestyle="-", linewidth=0.5)
+
+            leg = ax.legend(title="Runs", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="best", frameon=True, edgecolor="black")
+            leg.get_frame().set_linewidth(0.5)
+
+            st.pyplot(fig, use_container_width=False)
+
+
+        # —— RIGHT PANEL: Strain vs Modulus (linear) ——
+        with col2:
+            fig, ax = plt.subplots(figsize=(3.5, 3.5), constrained_layout=True)
+            ax.set_box_aspect(1)
+            for name in to_plot:
+                df, _ = processed[name]
+                label = re.sub(r'(?i)\.txt$|\.erp$|\.csv$', '', name)
+                ax.plot(df["Time"], df["Modulus_smooth"], color=color_map[name], linewidth=LINEWIDTH, label=label)
+
+            ax.set_xscale("log"); ax.set_yscale("linear")
+            fmt = ScalarFormatter(); fmt.set_scientific(False); fmt.set_useOffset(False)
+            ax.xaxis.set_major_formatter(fmt); ax.yaxis.set_major_formatter(fmt)
+
+            ax.set_title("Time vs Modulus", fontsize=TITLE_FS)
+            ax.set_xlabel("Time [min]", fontsize=LABEL_FS)
+            ax.set_ylabel("Modulus", fontsize=LABEL_FS)
+            ax.tick_params(axis="both", labelsize=TICK_FS)
+            ax.grid(which="major", linestyle="-", linewidth=0.5)
+            leg = ax.legend(title="Runs", fontsize=LEGEND_FS, title_fontsize=LEGEND_TITLE_FS, loc="best", frameon=True, edgecolor="black")
+            leg.get_frame().set_linewidth(0.5)
+            st.pyplot(fig, use_container_width=False)
+
+
+                
 
 
 
@@ -1264,4 +1391,8 @@ with tab_data:
         
         elif mode == "Indus - Plastequiv Test":
             df_display = df.iloc[:, :22].copy()
+            st.dataframe(df_display, use_container_width=True)
+        
+        elif mode == "Indus - Stress Decay":
+            df_display = df.iloc[:, :4].copy()
             st.dataframe(df_display, use_container_width=True)
