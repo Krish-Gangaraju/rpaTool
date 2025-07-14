@@ -1,8 +1,4 @@
-# RPA Post-Processing Tool
-
 Welcome to the **RPA Post-Processing Tool**! This Streamlit application automates the analysis and visualization of RPA (Rubber Process Analyzer) data for various test types. This guide will walk you through:
-
-- 📥 **Installation & Launch**
 - 🖥️ **User Interface Overview**
 - 🧪 **Test Modes & Their Outputs**
 - 📊 **Graph Interface**
@@ -10,30 +6,6 @@ Welcome to the **RPA Post-Processing Tool**! This Streamlit application automate
 - 📂 **Data Interface**
 - ⚙️ **Advanced Settings & Customization**
 
----
-
-## 📥 Installation & Launch
-
-1. **Clone the Repository**
-   ```bash
-   git clone https://github.com/your-org/rpa-post-processing-tool.git
-   cd rpa-post-processing-tool
-   ```
-
-2. **Install Dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Run the App**
-   ```bash
-   streamlit run app.py
-   ```
-
-4. **Open in Browser**
-   Navigate to `http://localhost:8501` to access the tool.
-
----
 
 ## 🖥️ User Interface Overview
 
